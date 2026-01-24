@@ -1,0 +1,25 @@
+# Binary
+wol-nut
+wol-nut-*
+
+# Data
+data/
+*.json
+!config.example.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage.out
+*.test
+
+# Build
+dist/

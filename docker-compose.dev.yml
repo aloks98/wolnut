@@ -1,0 +1,13 @@
+services:
+  wol-nut:
+    build:
+      context: .
+      args:
+        VERSION: dev
+        COMMIT: local
+    container_name: wol-nut-dev
+    network_mode: host
+    volumes:
+      - ./data:/data
+    environment:
+      - WOLNUT_LOG_LEVEL=debug

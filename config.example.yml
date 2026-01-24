@@ -1,0 +1,16 @@
+# WoL-NUT Configuration
+# Copy to config.yml and customize as needed
+
+# Server configuration
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+# Data storage
+data:
+  # Path to store device/UPS data (JSON)
+  path: "./data"
+
+# Logging
+log:
+  level: "info"  # debug, info, warn, error
