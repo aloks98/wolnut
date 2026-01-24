@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created]
 
 permissions:
   contents: write
@@ -22,7 +21,7 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: echo "VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         run: |
@@ -33,14 +32,13 @@ jobs:
           GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o wol-nut-linux-arm64
           GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "$LDFLAGS" -o wol-nut-linux-armv7
 
-      - name: Create Release
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
             wol-nut-linux-amd64
             wol-nut-linux-arm64
             wol-nut-linux-armv7
-          generate_release_notes: true
 
       # Docker build
       - name: Set up QEMU
