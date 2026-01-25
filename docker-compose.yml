@@ -1,6 +1,6 @@
 services:
   wol-nut:
-    image: ghcr.io/aloks98/wol-nut:latest
+    image: ghcr.io/aloks98/wolnut:latest
     container_name: wol-nut
     restart: unless-stopped
     network_mode: host  # Required for WoL broadcast and NUT access

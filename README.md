@@ -17,7 +17,7 @@ Lightweight Wake-on-LAN and NUT UPS monitoring dashboard for Raspberry Pi and Li
 ### Bare Metal (Raspberry Pi / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aloks98/wol-nut/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/install.sh | sudo bash
 ```
 
 ### Docker
@@ -27,13 +27,13 @@ docker run -d \
   --name wol-nut \
   --network host \
   -v wol-nut-data:/data \
-  ghcr.io/aloks98/wol-nut:latest
+  ghcr.io/aloks98/wolnut:latest
 ```
 
 ### Docker Compose
 
 ```bash
-curl -O https://raw.githubusercontent.com/aloks98/wol-nut/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/aloks98/wolnut/main/docker-compose.yml
 docker compose up -d
 ```
 
@@ -98,10 +98,10 @@ sudo journalctl -u wol-nut -f
 sudo systemctl restart wol-nut
 
 # Update to latest version
-curl -fsSL https://raw.githubusercontent.com/aloks98/wol-nut/main/scripts/update.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/update.sh | sudo bash
 
 # Uninstall
-curl -fsSL https://raw.githubusercontent.com/aloks98/wol-nut/main/scripts/uninstall.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/uninstall.sh | sudo bash
 ```
 
 ## API Endpoints
@@ -127,8 +127,8 @@ curl -fsSL https://raw.githubusercontent.com/aloks98/wol-nut/main/scripts/uninst
 
 ```bash
 # Clone repository
-git clone https://github.com/aloks98/wol-nut.git
-cd wol-nut
+git clone https://github.com/aloks98/wolnut.git
+cd wolnut
 
 # Run locally
 go run .

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REPO="aloks98/wol-nut"
+REPO="aloks98/wolnut"
 INSTALL_DIR="/opt/wol-nut"
 SERVICE_NAME="wol-nut"
 
