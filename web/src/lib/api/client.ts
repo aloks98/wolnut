@@ -1,5 +1,6 @@
 import type {
 	Device,
+	DeviceStatus,
 	UPSEntry,
 	UPSStatus,
 	APIResponse,
@@ -36,9 +37,17 @@ async function fetchAPI<T>(
 export const deviceAPI = {
 	getAll: () => fetchAPI<Device[]>('/devices'),
 
+	getStatus: () => fetchAPI<DeviceStatus[]>('/devices/status'),
+
 	create: (device: CreateDeviceRequest) =>
 		fetchAPI<Device>('/devices', {
 			method: 'POST',
+			body: JSON.stringify(device)
+		}),
+
+	update: (id: string, device: CreateDeviceRequest) =>
+		fetchAPI<Device>(`/devices/${id}`, {
+			method: 'PUT',
 			body: JSON.stringify(device)
 		}),
 
@@ -60,6 +69,12 @@ export const upsAPI = {
 	create: (ups: CreateUPSRequest) =>
 		fetchAPI<UPSEntry>('/ups', {
 			method: 'POST',
+			body: JSON.stringify(ups)
+		}),
+
+	update: (id: string, ups: CreateUPSRequest) =>
+		fetchAPI<UPSEntry>(`/ups/${id}`, {
+			method: 'PUT',
 			body: JSON.stringify(ups)
 		}),
 

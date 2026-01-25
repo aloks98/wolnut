@@ -19,12 +19,13 @@ type UPSStatus struct {
 	Error  string `json:"error,omitempty"`
 
 	// UPS status
-	Status       string `json:"status"`        // Raw status (OL, OB, LB, CHRG, etc.)
-	StatusLabel  string `json:"status_label"`  // Human-readable status
-	IsOnline     bool   `json:"is_online"`     // On line power
-	IsOnBattery  bool   `json:"is_on_battery"` // Running on battery
-	IsLowBattery bool   `json:"is_low_battery"`
-	IsCharging   bool   `json:"is_charging"`
+	Status        string `json:"status"`         // Raw status (OL, OB, LB, CHRG, etc.)
+	StatusLabel   string `json:"status_label"`   // Human-readable status
+	IsOnline      bool   `json:"is_online"`      // On line power
+	IsOnBattery   bool   `json:"is_on_battery"`  // Running on battery
+	IsLowBattery  bool   `json:"is_low_battery"`
+	IsCharging    bool   `json:"is_charging"`
+	IsDischarging bool   `json:"is_discharging"`
 
 	// Battery
 	BatteryCharge  int     `json:"battery_charge"`  // Percentage
@@ -138,7 +139,9 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 		status.IsOnline = strings.Contains(s, "OL")
 		status.IsOnBattery = strings.Contains(s, "OB")
 		status.IsLowBattery = strings.Contains(s, "LB")
-		status.IsCharging = strings.Contains(s, "CHRG")
+		status.IsDischarging = strings.Contains(s, "DISCHRG")
+		// CHRG but not DISCHRG
+		status.IsCharging = strings.Contains(s, "CHRG") && !status.IsDischarging
 	}
 
 	// Battery charge
@@ -310,11 +313,11 @@ func GetStatusLabel(status string) string {
 	if strings.Contains(status, "LB") {
 		parts = append(parts, "Low Battery")
 	}
-	if strings.Contains(status, "CHRG") {
-		parts = append(parts, "Charging")
-	}
+	// Check DISCHRG before CHRG since DISCHRG contains CHRG
 	if strings.Contains(status, "DISCHRG") {
 		parts = append(parts, "Discharging")
+	} else if strings.Contains(status, "CHRG") {
+		parts = append(parts, "Charging")
 	}
 	if strings.Contains(status, "BYPASS") {
 		parts = append(parts, "Bypass")

@@ -33,6 +33,7 @@ type Device struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	MAC  string `json:"mac"`
+	IP   string `json:"ip,omitempty"`
 }
 
 type UPSEntry struct {
@@ -142,6 +143,19 @@ func (s *AppState) AddDevice(device Device) error {
 	return s.saveDataLocked()
 }
 
+func (s *AppState) UpdateDevice(device Device) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, d := range s.Data.Devices {
+		if d.ID == device.ID {
+			s.Data.Devices[i] = device
+			return s.saveDataLocked()
+		}
+	}
+	return nil
+}
+
 func (s *AppState) DeleteDevice(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,6 +196,19 @@ func (s *AppState) AddUPS(ups UPSEntry) error {
 
 	s.Data.UPSList = append(s.Data.UPSList, ups)
 	return s.saveDataLocked()
+}
+
+func (s *AppState) UpdateUPS(ups UPSEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, u := range s.Data.UPSList {
+		if u.ID == ups.ID {
+			s.Data.UPSList[i] = ups
+			return s.saveDataLocked()
+		}
+	}
+	return nil
 }
 
 func (s *AppState) DeleteUPS(id string) error {

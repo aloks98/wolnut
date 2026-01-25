@@ -1,5 +1,5 @@
-# Frontend build stage
-FROM node:22-alpine AS frontend
+# Frontend build stage - use slim (Debian) for better native module compatibility
+FROM node:22-slim AS frontend
 
 WORKDIR /app/web
 

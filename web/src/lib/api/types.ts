@@ -3,6 +3,11 @@ export interface Device {
 	id: string;
 	name: string;
 	mac: string;
+	ip?: string;
+}
+
+export interface DeviceStatus extends Device {
+	online: boolean | null; // null = no IP configured
 }
 
 // UPS types
@@ -29,6 +34,7 @@ export interface UPSStatus {
 	is_on_battery: boolean;
 	is_low_battery: boolean;
 	is_charging: boolean;
+	is_discharging: boolean;
 
 	// Battery
 	battery_charge: number;
@@ -73,6 +79,7 @@ export interface APIResponse<T> {
 export interface CreateDeviceRequest {
 	name: string;
 	mac: string;
+	ip?: string;
 }
 
 export interface CreateUPSRequest {

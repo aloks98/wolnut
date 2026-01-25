@@ -20,12 +20,15 @@ func RegisterAPIHandlers(mux *http.ServeMux, state *AppState) {
 	// Device endpoints
 	mux.HandleFunc("GET /api/devices", handleAPIGetDevices(state))
 	mux.HandleFunc("POST /api/devices", handleAPIAddDevice(state))
+	mux.HandleFunc("PUT /api/devices/{id}", handleAPIUpdateDevice(state))
 	mux.HandleFunc("DELETE /api/devices/{id}", handleAPIDeleteDevice(state))
 	mux.HandleFunc("POST /api/devices/{id}/wake", handleAPIWakeDevice(state))
+	mux.HandleFunc("GET /api/devices/status", handleAPIDevicesStatus(state))
 
 	// UPS endpoints
 	mux.HandleFunc("GET /api/ups", handleAPIGetUPS(state))
 	mux.HandleFunc("POST /api/ups", handleAPIAddUPS(state))
+	mux.HandleFunc("PUT /api/ups/{id}", handleAPIUpdateUPS(state))
 	mux.HandleFunc("DELETE /api/ups/{id}", handleAPIDeleteUPS(state))
 	mux.HandleFunc("GET /api/ups/status", handleAPIUPSStatus(state))
 
@@ -90,6 +93,41 @@ func handleAPIAddDevice(state *AppState) http.HandlerFunc {
 	}
 }
 
+func handleAPIUpdateDevice(state *AppState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, "Device ID required")
+			return
+		}
+
+		var device Device
+		if err := json.NewDecoder(r.Body).Decode(&device); err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid JSON body")
+			return
+		}
+
+		if device.Name == "" || device.MAC == "" {
+			writeError(w, http.StatusBadRequest, "Name and MAC are required")
+			return
+		}
+
+		device.ID = id
+		device.MAC = NormalizeMAC(device.MAC)
+		if !ValidateMAC(device.MAC) {
+			writeError(w, http.StatusBadRequest, "Invalid MAC address format")
+			return
+		}
+
+		if err := state.UpdateDevice(device); err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to update device")
+			return
+		}
+
+		writeSuccess(w, device)
+	}
+}
+
 func handleAPIDeleteDevice(state *AppState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -130,6 +168,14 @@ func handleAPIWakeDevice(state *AppState) http.HandlerFunc {
 	}
 }
 
+func handleAPIDevicesStatus(state *AppState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		devices := state.GetDevices()
+		statuses := GetDevicesStatus(devices)
+		writeSuccess(w, statuses)
+	}
+}
+
 // UPS handlers
 
 func handleAPIGetUPS(state *AppState) http.HandlerFunc {
@@ -156,6 +202,36 @@ func handleAPIAddUPS(state *AppState) http.HandlerFunc {
 
 		if err := state.AddUPS(ups); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to save UPS")
+			return
+		}
+
+		writeSuccess(w, ups)
+	}
+}
+
+func handleAPIUpdateUPS(state *AppState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, "UPS ID required")
+			return
+		}
+
+		var ups UPSEntry
+		if err := json.NewDecoder(r.Body).Decode(&ups); err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid JSON body")
+			return
+		}
+
+		if ups.Name == "" || ups.Host == "" || ups.UPSName == "" {
+			writeError(w, http.StatusBadRequest, "Name, Host, and UPSName are required")
+			return
+		}
+
+		ups.ID = id
+
+		if err := state.UpdateUPS(ups); err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to update UPS")
 			return
 		}
 
