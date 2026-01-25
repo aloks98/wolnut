@@ -17,7 +17,7 @@ Lightweight Wake-on-LAN and NUT UPS monitoring dashboard for Raspberry Pi and Li
 ### Bare Metal (Raspberry Pi / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/install.sh | sudo bash
 ```
 
 ### Docker
@@ -33,7 +33,7 @@ docker run -d \
 ### Docker Compose
 
 ```bash
-curl -O https://raw.githubusercontent.com/aloks98/wolnut/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/aloks98/wolnut/master/docker-compose.yml
 docker compose up -d
 ```
 
@@ -98,10 +98,10 @@ sudo journalctl -u wol-nut -f
 sudo systemctl restart wol-nut
 
 # Update to latest version
-curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/update.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/update.sh | sudo bash
 
 # Uninstall
-curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/uninstall.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/uninstall.sh | sudo bash
 ```
 
 ## API Endpoints

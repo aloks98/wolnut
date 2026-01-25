@@ -2,7 +2,7 @@
 set -e
 
 # WoL-NUT Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/main/scripts/install.sh | sudo bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/install.sh | sudo bash
 
 REPO="aloks98/wolnut"
 INSTALL_DIR="/opt/wol-nut"
