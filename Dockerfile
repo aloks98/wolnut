@@ -1,4 +1,20 @@
-# Build stage
+# Frontend build stage
+FROM node:22-alpine AS frontend
+
+WORKDIR /app/web
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Install dependencies
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+# Build frontend
+COPY web/ .
+RUN pnpm build
+
+# Backend build stage
 FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
@@ -6,6 +22,9 @@ WORKDIR /app
 # Dependencies
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Copy frontend build
+COPY --from=frontend /app/web/build ./web/build
 
 # Source
 COPY . .

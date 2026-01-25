@@ -4,8 +4,7 @@ wol-nut-*
 
 # Data
 data/
-*.json
-!config.example.yml
+data.json
 
 # IDE
 .idea/

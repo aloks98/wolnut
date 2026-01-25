@@ -10,16 +10,52 @@ import (
 )
 
 type UPSStatus struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Host          string  `json:"host"`
-	Online        bool    `json:"online"`
-	Status        string  `json:"status"`
-	BatteryCharge int     `json:"battery_charge"`
-	Runtime       int     `json:"runtime"`
-	Load          int     `json:"load"`
-	InputVoltage  float64 `json:"input_voltage"`
-	Error         string  `json:"error,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Host string `json:"host"`
+
+	// Connection status
+	Online bool   `json:"online"`
+	Error  string `json:"error,omitempty"`
+
+	// UPS status
+	Status       string `json:"status"`        // Raw status (OL, OB, LB, CHRG, etc.)
+	StatusLabel  string `json:"status_label"`  // Human-readable status
+	IsOnline     bool   `json:"is_online"`     // On line power
+	IsOnBattery  bool   `json:"is_on_battery"` // Running on battery
+	IsLowBattery bool   `json:"is_low_battery"`
+	IsCharging   bool   `json:"is_charging"`
+
+	// Battery
+	BatteryCharge  int     `json:"battery_charge"`  // Percentage
+	BatteryVoltage float64 `json:"battery_voltage"` // Volts
+	BatteryRuntime int     `json:"battery_runtime"` // Seconds
+
+	// Load
+	Load    int     `json:"load"`     // Percentage
+	Power   float64 `json:"power"`    // Watts (current draw)
+	Nominal float64 `json:"nominal"`  // Nominal power in watts
+	Current float64 `json:"current"`  // Output current in amps
+
+	// Input
+	InputVoltage   float64 `json:"input_voltage"`   // Volts
+	InputFrequency float64 `json:"input_frequency"` // Hz
+
+	// Output
+	OutputVoltage   float64 `json:"output_voltage"`   // Volts
+	OutputFrequency float64 `json:"output_frequency"` // Hz
+
+	// UPS Info
+	Model        string `json:"model"`
+	Manufacturer string `json:"manufacturer"`
+	Serial       string `json:"serial"`
+	Firmware     string `json:"firmware"`
+
+	// Temperature
+	Temperature float64 `json:"temperature"` // Celsius
+
+	// Calculated
+	EstimatedWattage float64 `json:"estimated_wattage"` // Calculated from load * nominal
 }
 
 const (
@@ -95,37 +131,136 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	// Mark as online since we got a response
 	status.Online = true
 
-	// Parse status
+	// Parse UPS status
 	if s, ok := vars["ups.status"]; ok {
 		status.Status = s
+		status.StatusLabel = GetStatusLabel(s)
+		status.IsOnline = strings.Contains(s, "OL")
+		status.IsOnBattery = strings.Contains(s, "OB")
+		status.IsLowBattery = strings.Contains(s, "LB")
+		status.IsCharging = strings.Contains(s, "CHRG")
 	}
 
-	// Parse battery charge
+	// Battery charge
 	if s, ok := vars["battery.charge"]; ok {
 		if v, err := strconv.Atoi(s); err == nil {
 			status.BatteryCharge = v
 		}
 	}
 
-	// Parse runtime (in seconds)
-	if s, ok := vars["battery.runtime"]; ok {
-		if v, err := strconv.Atoi(s); err == nil {
-			status.Runtime = v
+	// Battery voltage
+	if s, ok := vars["battery.voltage"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.BatteryVoltage = v
 		}
 	}
 
-	// Parse load
+	// Battery runtime (in seconds)
+	if s, ok := vars["battery.runtime"]; ok {
+		if v, err := strconv.Atoi(s); err == nil {
+			status.BatteryRuntime = v
+		}
+	}
+
+	// Load percentage
 	if s, ok := vars["ups.load"]; ok {
 		if v, err := strconv.Atoi(s); err == nil {
 			status.Load = v
 		}
 	}
 
-	// Parse input voltage
+	// Real power (watts)
+	if s, ok := vars["ups.realpower"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.Power = v
+		}
+	} else if s, ok := vars["ups.power"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.Power = v
+		}
+	}
+
+	// Nominal power
+	if s, ok := vars["ups.realpower.nominal"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.Nominal = v
+		}
+	} else if s, ok := vars["ups.power.nominal"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.Nominal = v
+		}
+	}
+
+	// Output current
+	if s, ok := vars["output.current"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.Current = v
+		}
+	}
+
+	// Input voltage
 	if s, ok := vars["input.voltage"]; ok {
 		if v, err := strconv.ParseFloat(s, 64); err == nil {
 			status.InputVoltage = v
 		}
+	}
+
+	// Input frequency
+	if s, ok := vars["input.frequency"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.InputFrequency = v
+		}
+	}
+
+	// Output voltage
+	if s, ok := vars["output.voltage"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.OutputVoltage = v
+		}
+	}
+
+	// Output frequency
+	if s, ok := vars["output.frequency"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.OutputFrequency = v
+		}
+	}
+
+	// UPS info
+	if s, ok := vars["ups.model"]; ok {
+		status.Model = s
+	} else if s, ok := vars["device.model"]; ok {
+		status.Model = s
+	}
+
+	if s, ok := vars["ups.mfr"]; ok {
+		status.Manufacturer = s
+	} else if s, ok := vars["device.mfr"]; ok {
+		status.Manufacturer = s
+	}
+
+	if s, ok := vars["ups.serial"]; ok {
+		status.Serial = s
+	} else if s, ok := vars["device.serial"]; ok {
+		status.Serial = s
+	}
+
+	if s, ok := vars["ups.firmware"]; ok {
+		status.Firmware = s
+	}
+
+	// Temperature
+	if s, ok := vars["ups.temperature"]; ok {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			status.Temperature = v
+		}
+	}
+
+	// Calculate estimated wattage if we have load and nominal
+	if status.Nominal > 0 && status.Load > 0 {
+		status.EstimatedWattage = status.Nominal * float64(status.Load) / 100
+	} else if status.Power > 0 {
+		status.EstimatedWattage = status.Power
 	}
 
 	return status, nil
@@ -164,43 +299,48 @@ func FormatRuntime(seconds int) string {
 
 // GetStatusLabel returns a human-readable status label
 func GetStatusLabel(status string) string {
-	switch {
-	case strings.Contains(status, "OL"):
-		return "Online"
-	case strings.Contains(status, "OB"):
-		return "On Battery"
-	case strings.Contains(status, "LB"):
-		return "Low Battery"
-	case strings.Contains(status, "CHRG"):
-		return "Charging"
-	default:
+	var parts []string
+
+	if strings.Contains(status, "OL") {
+		parts = append(parts, "Online")
+	}
+	if strings.Contains(status, "OB") {
+		parts = append(parts, "On Battery")
+	}
+	if strings.Contains(status, "LB") {
+		parts = append(parts, "Low Battery")
+	}
+	if strings.Contains(status, "CHRG") {
+		parts = append(parts, "Charging")
+	}
+	if strings.Contains(status, "DISCHRG") {
+		parts = append(parts, "Discharging")
+	}
+	if strings.Contains(status, "BYPASS") {
+		parts = append(parts, "Bypass")
+	}
+	if strings.Contains(status, "CAL") {
+		parts = append(parts, "Calibrating")
+	}
+	if strings.Contains(status, "OFF") {
+		parts = append(parts, "Off")
+	}
+	if strings.Contains(status, "OVER") {
+		parts = append(parts, "Overloaded")
+	}
+	if strings.Contains(status, "TRIM") {
+		parts = append(parts, "Trimming")
+	}
+	if strings.Contains(status, "BOOST") {
+		parts = append(parts, "Boosting")
+	}
+
+	if len(parts) == 0 {
 		if status == "" {
 			return "Unknown"
 		}
 		return status
 	}
-}
 
-// GetStatusClass returns CSS class for status badge
-func GetStatusClass(status string) string {
-	switch {
-	case strings.Contains(status, "OL"):
-		return "bg-emerald-900 text-emerald-400"
-	case strings.Contains(status, "OB"):
-		return "bg-amber-900 text-amber-400"
-	case strings.Contains(status, "LB"):
-		return "bg-red-900 text-red-400"
-	default:
-		return "bg-gray-700 text-gray-400"
-	}
-}
-
-// GetBatteryColor returns the color for battery charge visualization
-func GetBatteryColor(charge int) string {
-	if charge > 50 {
-		return "#10b981" // emerald
-	} else if charge > 20 {
-		return "#f59e0b" // amber
-	}
-	return "#ef4444" // red
+	return strings.Join(parts, ", ")
 }

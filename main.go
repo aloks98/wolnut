@@ -4,16 +4,17 @@ import (
 	"embed"
 	"flag"
 	"fmt"
-	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
-//go:embed templates/*
-var templateFS embed.FS
+//go:embed web/build/*
+var frontendFS embed.FS
 
 var (
 	version = "dev"
@@ -42,25 +43,47 @@ func main() {
 		log.Fatalf("Failed to load data: %v", err)
 	}
 
-	// Parse templates with custom functions
-	funcMap := template.FuncMap{
-		"formatRuntime": FormatRuntime,
-	}
-
-	tmpl := template.Must(
-		template.New("").Funcs(funcMap).ParseFS(templateFS,
-			"templates/*.html",
-			"templates/partials/*.html",
-		),
-	)
-
 	// Setup routes
 	mux := http.NewServeMux()
-	RegisterHandlers(mux, state, tmpl)
+
+	// Register API handlers
+	RegisterAPIHandlers(mux, state)
+
+	// Serve frontend
+	frontendContent, err := fs.Sub(frontendFS, "web/build")
+	if err != nil {
+		log.Fatalf("Failed to load frontend: %v", err)
+	}
+	fileServer := http.FileServer(http.FS(frontendContent))
+
+	// SPA fallback handler
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Don't serve frontend for API routes
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Try to serve the file
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		// Check if file exists
+		if _, err := fs.Stat(frontendContent, strings.TrimPrefix(path, "/")); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// SPA fallback: serve index.html for all other routes
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	})
 
 	// Server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	server := &http.Server{Addr: addr, Handler: mux}
+	server := &http.Server{Addr: addr, Handler: corsMiddleware(mux)}
 
 	// Graceful shutdown
 	go func() {
@@ -75,4 +98,20 @@ func main() {
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// corsMiddleware adds CORS headers for development
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

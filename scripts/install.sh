@@ -14,6 +14,10 @@ USER="wol-nut"
 echo "======================================"
 echo "       WoL-NUT Installer              "
 echo "======================================"
+echo ""
+echo "  Wake-on-LAN + NUT UPS Dashboard"
+echo "  https://github.com/${REPO}"
+echo ""
 
 # Check root
 if [ "$EUID" -ne 0 ]; then
@@ -21,21 +25,41 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Check for required commands
+for cmd in curl systemctl; do
+    if ! command -v $cmd &> /dev/null; then
+        echo "Error: Required command '$cmd' not found"
+        exit 1
+    fi
+done
+
 # Detect architecture
 ARCH=$(uname -m)
 case $ARCH in
     x86_64)  ARCH="amd64" ;;
     aarch64) ARCH="arm64" ;;
     armv7l)  ARCH="armv7" ;;
+    armv6l)  ARCH="armv7" ;;  # Fallback for older Pis
     *)       echo "Error: Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 echo "-> Architecture: $ARCH"
 
 # Get latest release
 echo "-> Fetching latest release..."
-LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+API_RESPONSE=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest")
+if echo "$API_RESPONSE" | grep -q "Not Found"; then
+    echo "Error: Could not fetch releases. Is the repository public?"
+    echo "API response: $API_RESPONSE"
+    exit 1
+fi
+if echo "$API_RESPONSE" | grep -q "API rate limit"; then
+    echo "Error: GitHub API rate limit exceeded. Try again later."
+    exit 1
+fi
+LATEST=$(echo "$API_RESPONSE" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 if [ -z "$LATEST" ]; then
     echo "Error: Could not determine latest release"
+    echo "API response: $API_RESPONSE"
     exit 1
 fi
 echo "-> Latest version: $LATEST"
@@ -52,14 +76,27 @@ mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
 
 # Download binary
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST}/wol-nut-linux-${ARCH}"
-echo "-> Downloading binary..."
-curl -fsSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/wol-nut"
+echo "-> Downloading binary from:"
+echo "   $DOWNLOAD_URL"
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/wol-nut"; then
+    echo "Error: Failed to download binary"
+    echo "Check if release exists: https://github.com/${REPO}/releases/tag/${LATEST}"
+    exit 1
+fi
 chmod +x "$INSTALL_DIR/wol-nut"
+
+# Verify binary
+if ! "$INSTALL_DIR/wol-nut" --version &>/dev/null; then
+    echo "Warning: Could not verify binary version"
+fi
 
 # Create default config if not exists
 if [ ! -f "$CONFIG_DIR/config.yml" ]; then
     echo "-> Creating default config..."
     cat > "$CONFIG_DIR/config.yml" << 'EOF'
+# WoL-NUT Configuration
+# Documentation: https://github.com/aloks98/wolnut
+
 server:
   port: 8080
   host: "0.0.0.0"
@@ -132,6 +169,7 @@ if systemctl is-active --quiet "$SERVICE_NAME"; then
     echo "    Status:   sudo systemctl status $SERVICE_NAME"
     echo "    Logs:     sudo journalctl -u $SERVICE_NAME -f"
     echo "    Restart:  sudo systemctl restart $SERVICE_NAME"
+    echo "    Update:   curl -fsSL https://raw.githubusercontent.com/${REPO}/master/scripts/update.sh | sudo bash"
     echo ""
 else
     echo "Error: Service failed to start"

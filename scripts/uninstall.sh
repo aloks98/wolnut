@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# WoL-NUT Uninstaller
+# Usage: curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/uninstall.sh | sudo bash
+
 SERVICE_NAME="wol-nut"
 INSTALL_DIR="/opt/wol-nut"
 CONFIG_DIR="/etc/wol-nut"
@@ -36,36 +39,54 @@ fi
 
 # Remove binary
 if [ -d "$INSTALL_DIR" ]; then
-    echo "-> Removing installation..."
+    echo "-> Removing installation directory..."
     rm -rf "$INSTALL_DIR"
 fi
 
 # Config
 if [ -d "$CONFIG_DIR" ]; then
-    read -p "-> Remove config ($CONFIG_DIR)? [y/N] " -n 1 -r
+    echo ""
+    read -p "Remove configuration ($CONFIG_DIR)? [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf "$CONFIG_DIR"
+        echo "-> Configuration removed"
+    else
+        echo "-> Configuration kept at $CONFIG_DIR"
     fi
 fi
 
 # Data
 if [ -d "$DATA_DIR" ]; then
-    read -p "-> Remove data ($DATA_DIR)? [y/N] " -n 1 -r
+    echo ""
+    read -p "Remove data ($DATA_DIR)? This includes all devices and UPS connections. [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf "$DATA_DIR"
+        echo "-> Data removed"
+    else
+        echo "-> Data kept at $DATA_DIR"
     fi
 fi
 
 # User
 if id "$USER" &>/dev/null; then
-    read -p "-> Remove system user ($USER)? [y/N] " -n 1 -r
+    echo ""
+    read -p "Remove system user ($USER)? [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        userdel "$USER"
+        userdel "$USER" 2>/dev/null || true
+        echo "-> User removed"
+    else
+        echo "-> User kept"
     fi
 fi
 
 echo ""
-echo "WoL-NUT uninstalled"
+echo "======================================"
+echo "   WoL-NUT uninstalled                "
+echo "======================================"
+echo ""
+echo "To reinstall, run:"
+echo "  curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/install.sh | sudo bash"
+echo ""

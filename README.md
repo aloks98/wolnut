@@ -6,11 +6,23 @@ Lightweight Wake-on-LAN and NUT UPS monitoring dashboard for Raspberry Pi and Li
 
 - **Wake-on-LAN** - Send magic packets to wake network devices
 - **UPS Monitoring** - Real-time status from NUT (Network UPS Tools) servers
-- **Battery Visualization** - Donut charts showing charge level, runtime, and load
+- **Battery Visualization** - Donut charts showing charge level and load percentage
+- **Detailed UPS Stats** - View power draw, voltage, runtime, temperature, and more
 - **Mobile Friendly** - Responsive design works on any device
-- **Single Binary** - No dependencies, easy deployment
+- **Single Binary** - No dependencies, embedded frontend
 - **Auto-refresh** - UPS status updates every 30 seconds
 - **Backup/Restore** - Export and import configuration
+
+## Screenshots
+
+The dashboard displays:
+- Battery charge with donut chart
+- Load percentage with donut chart
+- Runtime remaining
+- Power draw (current and nominal wattage)
+- Input/output voltage and frequency
+- Battery voltage and temperature
+- Raw UPS status codes
 
 ## Quick Install
 
@@ -81,6 +93,15 @@ log:
    - **UPS Name**: UPS identifier as configured in NUT (usually `ups`)
 4. Click **Add UPS**
 
+### Finding Your UPS Name
+
+If you're unsure of your UPS name in NUT:
+
+```bash
+# List all UPS devices on the server
+upsc -l localhost
+```
+
 ### Waking Devices
 
 From the Dashboard or Devices page, click the **Wake** button to send a magic packet.
@@ -108,20 +129,60 @@ curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/unins
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | Dashboard |
-| GET | `/devices` | Manage WoL devices |
-| GET | `/ups` | Manage UPS connections |
-| POST | `/wake/{id}` | Send WoL packet |
-| GET | `/api/ups/status` | JSON UPS status |
-| GET | `/config/export` | Download backup |
-| POST | `/config/import` | Restore backup |
+| GET | `/api/devices` | List all devices |
+| POST | `/api/devices` | Add device |
+| DELETE | `/api/devices/{id}` | Delete device |
+| POST | `/api/devices/{id}/wake` | Wake device |
+| GET | `/api/ups` | List all UPS entries |
+| POST | `/api/ups` | Add UPS |
+| DELETE | `/api/ups/{id}` | Delete UPS |
+| GET | `/api/ups/status` | Get all UPS statuses with detailed info |
+| GET | `/api/config/export` | Export data.json backup |
+| POST | `/api/config/import` | Import data.json backup |
 | GET | `/health` | Health check |
+
+### UPS Status Response
+
+The `/api/ups/status` endpoint returns detailed UPS information:
+
+```json
+{
+  "id": "abc123",
+  "name": "Main UPS",
+  "host": "localhost:3493",
+  "online": true,
+  "status": "OL CHRG",
+  "status_label": "Online, Charging",
+  "is_online": true,
+  "is_on_battery": false,
+  "is_low_battery": false,
+  "is_charging": true,
+  "battery_charge": 100,
+  "battery_voltage": 27.2,
+  "battery_runtime": 3600,
+  "load": 15,
+  "power": 150,
+  "nominal": 1000,
+  "current": 0.7,
+  "input_voltage": 230,
+  "input_frequency": 50,
+  "output_voltage": 230,
+  "output_frequency": 50,
+  "model": "Smart-UPS 1000",
+  "manufacturer": "APC",
+  "serial": "ABC123",
+  "firmware": "1.2.3",
+  "temperature": 25,
+  "estimated_wattage": 150
+}
+```
 
 ## Development
 
 ### Prerequisites
 
 - Go 1.22+
+- Node.js 22+ with pnpm
 
 ### Build & Run
 
@@ -130,10 +191,18 @@ curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/unins
 git clone https://github.com/aloks98/wolnut.git
 cd wolnut
 
-# Run locally
+# Install frontend dependencies
+cd web && pnpm install && cd ..
+
+# Development mode (frontend + backend separately)
+# Terminal 1: Frontend dev server
+cd web && pnpm dev
+
+# Terminal 2: Backend (reads from web/build)
 go run .
 
-# Build binary
+# Production build
+cd web && pnpm build && cd ..
 go build -o wol-nut
 
 # Run with config
@@ -143,15 +212,27 @@ go build -o wol-nut
 ### Docker Development
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+# Build with docker compose
+docker compose build
+
+# Run
+docker compose up
 ```
 
 ## Architecture
 
-- **Backend**: Go with stdlib `net/http`
-- **Templates**: `html/template` with embedded assets
-- **Frontend**: HTMX + Alpine.js + Tailwind CSS + Chart.js
-- **Data**: JSON file storage
+| Layer | Technology |
+|-------|------------|
+| Frontend Framework | SvelteKit (static) |
+| UI Components | shadcn-svelte |
+| Styling | Tailwind CSS v4 |
+| Charts | Layerchart |
+| State Management | Svelte 5 runes |
+| Backend | Go (net/http) |
+| Data Storage | JSON file |
+| Embedding | Go embed |
+
+The frontend is built as a static SPA and embedded into the Go binary at compile time. In production, a single binary serves both the API and the frontend.
 
 ## Requirements
 
