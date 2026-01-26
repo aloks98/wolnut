@@ -114,21 +114,11 @@
 		<Card.Header>
 			<Card.Title>About WoL-NUT</Card.Title>
 		</Card.Header>
-		<Card.Content class="text-sm text-muted-foreground space-y-2">
+		<Card.Content class="text-sm text-muted-foreground space-y-3">
 			<p>
-				WoL-NUT is a lightweight Wake-on-LAN and NUT UPS monitoring dashboard.
+				WoL-NUT is a lightweight, self-hosted dashboard for managing Wake-on-LAN devices and monitoring UPS systems via NUT (Network UPS Tools). It provides a simple, responsive interface to wake your network devices and keep an eye on your power backup status.
 			</p>
 			<p>
-				<strong>Features:</strong>
-			</p>
-			<ul class="list-disc list-inside space-y-1 ml-2">
-				<li>Wake-on-LAN for network devices</li>
-				<li>Real-time UPS monitoring via NUT</li>
-				<li>Auto-refresh status every 30 seconds</li>
-				<li>Mobile-friendly responsive design</li>
-				<li>Single binary deployment</li>
-			</ul>
-			<p class="pt-2">
 				<a
 					href="https://github.com/aloks98/wolnut"
 					target="_blank"
@@ -137,6 +127,9 @@
 				>
 					View on GitHub
 				</a>
+			</p>
+			<p class="text-xs pt-2 border-t border-border">
+				Vibes by <a href="https://github.com/aloks98" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">@aloks98</a>, tokens by <a href="https://claude.ai" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">Claude</a>
 			</p>
 		</Card.Content>
 	</Card.Root>

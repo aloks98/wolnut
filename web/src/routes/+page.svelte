@@ -1,13 +1,21 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { deviceAPI, upsAPI } from '$lib/api';
 	import type { DeviceStatus, UPSStatus } from '$lib/api';
-	import Circle from '@lucide/svelte/icons/circle';
+	import {
+		formatRuntime,
+		formatWattage,
+		getBatteryColor,
+		getBatteryTextColor,
+		getLoadColor
+	} from '$lib/utils';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import * as Table from '$lib/components/ui/table';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import { PieChart } from 'layerchart';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Power from '@lucide/svelte/icons/power';
 	import Battery from '@lucide/svelte/icons/battery';
@@ -20,36 +28,61 @@
 	import Activity from '@lucide/svelte/icons/activity';
 	import Info from '@lucide/svelte/icons/info';
 
-	let devices = $state<DeviceStatus[]>([]);
-	let upsStatuses = $state<UPSStatus[]>([]);
-	let loading = $state(true);
-	let refreshing = $state(false);
 	let wakingDevice = $state<string | null>(null);
-	let lastUpdated = $state<Date | null>(null);
 
-	async function loadData() {
-		const [devicesRes, upsRes] = await Promise.all([
-			deviceAPI.getStatus(),
-			upsAPI.getStatus()
-		]);
+	const queryClient = useQueryClient();
 
-		if (devicesRes.success && devicesRes.data) {
-			devices = devicesRes.data;
-		}
-		if (upsRes.success && upsRes.data) {
-			upsStatuses = upsRes.data;
-		}
-		lastUpdated = new Date();
-		loading = false;
+	// Device status query with auto-refresh
+	const devicesQuery = createQuery(() => ({
+		queryKey: ['devices', 'status'],
+		queryFn: async () => {
+			const res = await deviceAPI.getStatus();
+			if (res.success && res.data) {
+				return res.data;
+			}
+			throw new Error(res.error || 'Failed to fetch devices');
+		},
+		refetchInterval: 30000,
+		refetchIntervalInBackground: false
+	}));
+
+	// UPS status query with auto-refresh
+	const upsQuery = createQuery(() => ({
+		queryKey: ['ups', 'status'],
+		queryFn: async () => {
+			const res = await upsAPI.getStatus();
+			if (res.success && res.data) {
+				return res.data;
+			}
+			throw new Error(res.error || 'Failed to fetch UPS status');
+		},
+		refetchInterval: 30000,
+		refetchIntervalInBackground: false
+	}));
+
+	// Derived state - separate loading states
+	const devices = $derived(devicesQuery.data ?? []);
+	const upsStatuses = $derived(upsQuery.data ?? []);
+	const upsLoading = $derived(upsQuery.isLoading);
+	const devicesLoading = $derived(devicesQuery.isLoading);
+	const upsRefreshing = $derived(upsQuery.isFetching);
+	const devicesRefreshing = $derived(devicesQuery.isFetching);
+	const upsLastUpdated = $derived(
+		upsQuery.dataUpdatedAt ? new Date(upsQuery.dataUpdatedAt) : null
+	);
+	const devicesLastUpdated = $derived(
+		devicesQuery.dataUpdatedAt ? new Date(devicesQuery.dataUpdatedAt) : null
+	);
+
+	async function refreshUPS() {
+		await queryClient.invalidateQueries({ queryKey: ['ups', 'status'] });
 	}
 
-	async function refresh() {
-		refreshing = true;
-		await loadData();
-		refreshing = false;
+	async function refreshDevices() {
+		await queryClient.invalidateQueries({ queryKey: ['devices', 'status'] });
 	}
 
-	async function wakeDevice(device: Device) {
+	async function wakeDevice(device: DeviceStatus) {
 		wakingDevice = device.id;
 		const res = await deviceAPI.wake(device.id);
 		if (res.success) {
@@ -60,65 +93,14 @@
 		wakingDevice = null;
 	}
 
-	function formatRuntime(seconds: number): string {
-		if (seconds < 60) return `${seconds}s`;
-		const minutes = Math.floor(seconds / 60);
-		if (minutes < 60) return `${minutes}m`;
-		const hours = Math.floor(minutes / 60);
-		const mins = minutes % 60;
-		return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-	}
-
 	function getStatusBadgeClass(ups: UPSStatus): string {
 		if (!ups.online) return 'bg-red-500/15 text-red-500 border-red-500/20';
 		if (ups.is_low_battery) return 'bg-red-500/15 text-red-500 border-red-500/20';
-		if (ups.is_on_battery || ups.is_discharging) return 'bg-amber-500/15 text-amber-500 border-amber-500/20';
+		if (ups.is_on_battery || ups.is_discharging)
+			return 'bg-amber-500/15 text-amber-500 border-amber-500/20';
 		if (ups.is_charging) return 'bg-blue-500/15 text-blue-500 border-blue-500/20';
-		return 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20'; // Online
+		return 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20';
 	}
-
-	function getBatteryColor(charge: number): string {
-		if (charge > 50) return '#22c55e'; // green-500
-		if (charge > 20) return '#f59e0b'; // amber-500
-		return '#ef4444'; // red-500
-	}
-
-	function getBatteryTextColor(charge: number): string {
-		if (charge > 50) return 'text-emerald-500';
-		if (charge > 20) return 'text-amber-500';
-		return 'text-red-500';
-	}
-
-	function getLoadColor(load: number): string {
-		if (load < 50) return '#22c55e'; // green
-		if (load < 80) return '#f59e0b'; // amber
-		return '#ef4444'; // red
-	}
-
-	function formatWattage(watts: number): string {
-		if (watts >= 1000) {
-			return `${(watts / 1000).toFixed(1)}kW`;
-		}
-		return `${Math.round(watts)}W`;
-	}
-
-	function getDeviceStatusColor(online: boolean | null): string {
-		if (online === null) return 'text-muted-foreground';
-		return online ? 'text-emerald-500' : 'text-red-500';
-	}
-
-	onMount(() => {
-		loadData();
-
-		// Auto-refresh every 30 seconds
-		const interval = setInterval(() => {
-			if (!document.hidden) {
-				loadData();
-			}
-		}, 30000);
-
-		return () => clearInterval(interval);
-	});
 </script>
 
 <div class="space-y-8">
@@ -127,19 +109,19 @@
 		<div class="flex items-center justify-between mb-4">
 			<h2 class="text-xl font-semibold">UPS Status</h2>
 			<div class="flex items-center gap-2">
-				{#if lastUpdated}
+				{#if upsLastUpdated}
 					<span class="text-xs text-muted-foreground">
-						Updated {lastUpdated.toLocaleTimeString()}
+						Updated {upsLastUpdated.toLocaleTimeString()}
 					</span>
 				{/if}
-				<Button variant="outline" size="sm" onclick={refresh} disabled={refreshing}>
-					<RefreshCw class="h-4 w-4 mr-1 {refreshing ? 'animate-spin' : ''}" />
+				<Button variant="outline" size="sm" onclick={refreshUPS} disabled={upsRefreshing}>
+					<RefreshCw class="h-4 w-4 mr-1 {upsRefreshing ? 'animate-spin' : ''}" />
 					Refresh
 				</Button>
 			</div>
 		</div>
 
-		{#if loading}
+		{#if upsLoading}
 			<div class="grid gap-6 lg:grid-cols-2">
 				{#each [1, 2] as _}
 					<Card.Root>
@@ -207,8 +189,12 @@
 													}
 												]}
 											/>
-											<div class="absolute inset-0 flex flex-col items-center justify-center">
-												<span class="text-2xl font-bold {getBatteryTextColor(ups.battery_charge)}">
+											<div
+												class="absolute inset-0 flex flex-col items-center justify-center"
+											>
+												<span
+													class="text-2xl font-bold {getBatteryTextColor(ups.battery_charge)}"
+												>
 													{ups.battery_charge}%
 												</span>
 											</div>
@@ -234,7 +220,9 @@
 													}
 												]}
 											/>
-											<div class="absolute inset-0 flex flex-col items-center justify-center">
+											<div
+												class="absolute inset-0 flex flex-col items-center justify-center"
+											>
 												<span class="text-2xl font-bold">
 													{ups.load}%
 												</span>
@@ -251,7 +239,9 @@
 										<Clock class="h-5 w-5 text-muted-foreground" />
 										<div>
 											<p class="text-xs text-muted-foreground">Runtime</p>
-											<p class="text-base font-medium">{formatRuntime(ups.battery_runtime)}</p>
+											<p class="text-base font-medium">
+												{formatRuntime(ups.battery_runtime)}
+											</p>
 										</div>
 									</div>
 
@@ -269,7 +259,9 @@
 													--
 												{/if}
 												{#if ups.nominal > 0}
-													<span class="text-sm text-muted-foreground">/ {formatWattage(ups.nominal)}</span>
+													<span class="text-sm text-muted-foreground"
+														>/ {formatWattage(ups.nominal)}</span
+													>
 												{/if}
 											</p>
 										</div>
@@ -281,9 +273,13 @@
 										<div>
 											<p class="text-xs text-muted-foreground">Input</p>
 											<p class="text-base font-medium">
-												{ups.input_voltage > 0 ? `${ups.input_voltage.toFixed(0)}V` : '--'}
+												{ups.input_voltage > 0
+													? `${ups.input_voltage.toFixed(0)}V`
+													: '--'}
 												{#if ups.input_frequency > 0}
-													<span class="text-sm text-muted-foreground">{ups.input_frequency.toFixed(1)}Hz</span>
+													<span class="text-sm text-muted-foreground"
+														>{ups.input_frequency.toFixed(1)}Hz</span
+													>
 												{/if}
 											</p>
 										</div>
@@ -295,9 +291,13 @@
 										<div>
 											<p class="text-xs text-muted-foreground">Output</p>
 											<p class="text-base font-medium">
-												{ups.output_voltage > 0 ? `${ups.output_voltage.toFixed(0)}V` : '--'}
+												{ups.output_voltage > 0
+													? `${ups.output_voltage.toFixed(0)}V`
+													: '--'}
 												{#if ups.output_frequency > 0}
-													<span class="text-sm text-muted-foreground">{ups.output_frequency.toFixed(1)}Hz</span>
+													<span class="text-sm text-muted-foreground"
+														>{ups.output_frequency.toFixed(1)}Hz</span
+													>
 												{/if}
 											</p>
 										</div>
@@ -309,7 +309,9 @@
 											<Battery class="h-5 w-5 text-muted-foreground" />
 											<div>
 												<p class="text-xs text-muted-foreground">Batt. Voltage</p>
-												<p class="text-base font-medium">{ups.battery_voltage.toFixed(1)}V</p>
+												<p class="text-base font-medium">
+													{ups.battery_voltage.toFixed(1)}V
+												</p>
 											</div>
 										</div>
 									{/if}
@@ -320,7 +322,9 @@
 											<Thermometer class="h-5 w-5 text-muted-foreground" />
 											<div>
 												<p class="text-xs text-muted-foreground">Temperature</p>
-												<p class="text-base font-medium">{ups.temperature.toFixed(0)}°C</p>
+												<p class="text-base font-medium">
+													{ups.temperature.toFixed(0)}°C
+												</p>
 											</div>
 										</div>
 									{/if}
@@ -359,24 +363,29 @@
 	<section>
 		<div class="flex items-center justify-between mb-4">
 			<h2 class="text-xl font-semibold">Wake-on-LAN Devices</h2>
-			<Button variant="outline" size="sm" href="/devices">
-				Manage Devices
-			</Button>
+			<div class="flex items-center gap-2">
+				{#if devicesLastUpdated}
+					<span class="text-xs text-muted-foreground">
+						Updated {devicesLastUpdated.toLocaleTimeString()}
+					</span>
+				{/if}
+				<Button variant="outline" size="sm" onclick={refreshDevices} disabled={devicesRefreshing}>
+					<RefreshCw class="h-4 w-4 mr-1 {devicesRefreshing ? 'animate-spin' : ''}" />
+					Refresh
+				</Button>
+			</div>
 		</div>
 
-		{#if loading}
-			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-				{#each [1, 2] as _}
-					<Card.Root>
-						<Card.Content class="p-6">
-							<div class="animate-pulse space-y-2">
-								<div class="h-4 bg-muted rounded w-1/2"></div>
-								<div class="h-3 bg-muted rounded w-3/4"></div>
-							</div>
-						</Card.Content>
-					</Card.Root>
-				{/each}
-			</div>
+		{#if devicesLoading}
+			<Card.Root>
+				<Card.Content class="p-6">
+					<div class="animate-pulse space-y-3">
+						<div class="h-4 bg-muted rounded w-full"></div>
+						<div class="h-4 bg-muted rounded w-full"></div>
+						<div class="h-4 bg-muted rounded w-full"></div>
+					</div>
+				</Card.Content>
+			</Card.Root>
 		{:else if devices.length === 0}
 			<Card.Root>
 				<Card.Content class="p-6 text-center text-muted-foreground">
@@ -386,34 +395,62 @@
 				</Card.Content>
 			</Card.Root>
 		{:else}
-			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-				{#each devices as device}
-					<Card.Root>
-						<Card.Content class="p-4 flex items-center justify-between">
-							<div class="flex items-center gap-3">
-								<Circle
-									class="h-3 w-3 fill-current {getDeviceStatusColor(device.online)}"
-								/>
-								<div>
-									<h3 class="font-medium">{device.name}</h3>
-									<p class="text-sm text-muted-foreground font-mono">{device.mac}</p>
-								</div>
-							</div>
-							<Button
-								size="sm"
-								onclick={() => wakeDevice(device)}
-								disabled={wakingDevice === device.id}
-							>
-								{#if wakingDevice === device.id}
-									<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
-								{:else}
-									<Power class="h-4 w-4 mr-1" />
-								{/if}
-								Wake
-							</Button>
-						</Card.Content>
-					</Card.Root>
-				{/each}
+			<div class="rounded-lg border">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head class="w-24">Status</Table.Head>
+							<Table.Head>Name</Table.Head>
+							<Table.Head>MAC Address</Table.Head>
+							<Table.Head>IP Address</Table.Head>
+							<Table.Head class="w-16 text-right">Action</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each devices as device}
+							<Table.Row>
+								<Table.Cell>
+									<Badge
+										variant="outline"
+										class={device.online === null
+											? 'bg-muted/50 text-muted-foreground border-muted'
+											: device.online
+												? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20'
+												: 'bg-red-500/15 text-red-500 border-red-500/20'}
+									>
+										{device.online === null ? 'Unknown' : device.online ? 'Online' : 'Offline'}
+									</Badge>
+								</Table.Cell>
+								<Table.Cell class="font-medium">{device.name}</Table.Cell>
+								<Table.Cell class="font-mono text-sm text-muted-foreground">{device.mac}</Table.Cell>
+								<Table.Cell class="font-mono text-sm text-muted-foreground">
+									{device.ip || '-'}
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button
+												size="icon"
+												variant="outline"
+												onclick={() => wakeDevice(device)}
+												disabled={wakingDevice === device.id}
+											>
+												{#if wakingDevice === device.id}
+													<RefreshCw class="h-4 w-4 animate-spin" />
+												{:else}
+													<Power class="h-4 w-4" />
+												{/if}
+											</Button>
+										</Tooltip.Trigger>
+										<Tooltip.Content>
+											<p>Wake {device.name}</p>
+										</Tooltip.Content>
+									</Tooltip.Root>
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
 			</div>
 		{/if}
 	</section>

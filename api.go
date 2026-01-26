@@ -16,14 +16,14 @@ type APIResponse struct {
 }
 
 // RegisterAPIHandlers sets up all API routes
-func RegisterAPIHandlers(mux *http.ServeMux, state *AppState) {
+func RegisterAPIHandlers(mux *http.ServeMux, state *AppState, statusCache *StatusCache) {
 	// Device endpoints
 	mux.HandleFunc("GET /api/devices", handleAPIGetDevices(state))
 	mux.HandleFunc("POST /api/devices", handleAPIAddDevice(state))
 	mux.HandleFunc("PUT /api/devices/{id}", handleAPIUpdateDevice(state))
 	mux.HandleFunc("DELETE /api/devices/{id}", handleAPIDeleteDevice(state))
 	mux.HandleFunc("POST /api/devices/{id}/wake", handleAPIWakeDevice(state))
-	mux.HandleFunc("GET /api/devices/status", handleAPIDevicesStatus(state))
+	mux.HandleFunc("GET /api/devices/status", handleAPIDevicesStatus(statusCache))
 
 	// UPS endpoints
 	mux.HandleFunc("GET /api/ups", handleAPIGetUPS(state))
@@ -168,10 +168,9 @@ func handleAPIWakeDevice(state *AppState) http.HandlerFunc {
 	}
 }
 
-func handleAPIDevicesStatus(state *AppState) http.HandlerFunc {
+func handleAPIDevicesStatus(statusCache *StatusCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		devices := state.GetDevices()
-		statuses := GetDevicesStatus(devices)
+		statuses := statusCache.GetDevicesStatus()
 		writeSuccess(w, statuses)
 	}
 }

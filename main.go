@@ -43,11 +43,15 @@ func main() {
 		log.Fatalf("Failed to load data: %v", err)
 	}
 
+	// Initialize status cache for device online status
+	statusCache := NewStatusCache(state)
+	defer statusCache.Stop()
+
 	// Setup routes
 	mux := http.NewServeMux()
 
 	// Register API handlers
-	RegisterAPIHandlers(mux, state)
+	RegisterAPIHandlers(mux, state, statusCache)
 
 	// Serve frontend
 	frontendContent, err := fs.Sub(frontendFS, "web/build")

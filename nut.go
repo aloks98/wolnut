@@ -211,6 +211,10 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	// Input frequency
 	if s, ok := vars["input.frequency"]; ok {
 		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			// Some UPS report frequency in tenths of Hz (e.g., 498 instead of 49.8)
+			if v > 100 {
+				v = v / 10
+			}
 			status.InputFrequency = v
 		}
 	}
@@ -225,6 +229,10 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	// Output frequency
 	if s, ok := vars["output.frequency"]; ok {
 		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			// Some UPS report frequency in tenths of Hz (e.g., 498 instead of 49.8)
+			if v > 100 {
+				v = v / 10
+			}
 			status.OutputFrequency = v
 		}
 	}

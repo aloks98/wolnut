@@ -1,94 +1,132 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { deviceAPI } from '$lib/api';
 	import type { DeviceStatus } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Field from '$lib/components/ui/field';
+	import * as Table from '$lib/components/ui/table';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { toast } from 'svelte-sonner';
+	import { superForm, defaults } from 'sveltekit-superforms';
+	import { zod4 } from 'sveltekit-superforms/adapters';
+	import { deviceSchema } from '$lib/schemas';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Power from '@lucide/svelte/icons/power';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import Circle from '@lucide/svelte/icons/circle';
 
-	let devices = $state<DeviceStatus[]>([]);
-	let loading = $state(true);
 	let addDialogOpen = $state(false);
 	let editDialogOpen = $state(false);
-	let submitting = $state(false);
 	let deletingId = $state<string | null>(null);
 	let wakingId = $state<string | null>(null);
-
-	// Form state
-	let name = $state('');
-	let mac = $state('');
-	let ip = $state('');
 	let editingId = $state<string | null>(null);
 
-	async function loadDevices() {
-		const res = await deviceAPI.getStatus();
-		if (res.success && res.data) {
-			devices = res.data;
-		}
-		loading = false;
-	}
+	const queryClient = useQueryClient();
 
-	function openAddDialog() {
-		name = '';
-		mac = '';
-		ip = '';
-		editingId = null;
-		addDialogOpen = true;
-	}
-
-	function openEditDialog(device: DeviceStatus) {
-		name = device.name;
-		mac = device.mac;
-		ip = device.ip || '';
-		editingId = device.id;
-		editDialogOpen = true;
-	}
-
-	async function saveDevice() {
-		if (!name.trim() || !mac.trim()) {
-			toast.error('Name and MAC address are required');
-			return;
-		}
-
-		submitting = true;
-
-		const deviceData = {
-			name: name.trim(),
-			mac: mac.trim(),
-			ip: ip.trim() || undefined
-		};
-
-		if (editingId) {
-			// Update existing
-			const res = await deviceAPI.update(editingId, deviceData);
-			if (res.success) {
-				await loadDevices();
-				toast.success(`Device "${name}" updated`);
-				editDialogOpen = false;
-			} else {
-				toast.error(res.error || 'Failed to update device');
+	// Device status query with auto-refresh
+	const devicesQuery = createQuery(() => ({
+		queryKey: ['devices', 'status'],
+		queryFn: async () => {
+			const res = await deviceAPI.getStatus();
+			if (res.success && res.data) {
+				return res.data;
 			}
-		} else {
-			// Create new
-			const res = await deviceAPI.create(deviceData);
+			throw new Error(res.error || 'Failed to fetch devices');
+		},
+		refetchInterval: 30000,
+		refetchIntervalInBackground: false
+	}));
+
+	// Derived state
+	const devices = $derived(devicesQuery.data ?? []);
+	const loading = $derived(devicesQuery.isLoading);
+
+	async function invalidateDevices() {
+		await queryClient.invalidateQueries({ queryKey: ['devices', 'status'] });
+	}
+
+	// Superform for Add dialog
+	const addForm = superForm(defaults({ name: '', mac: '', ip: '' }, zod4(deviceSchema)), {
+		SPA: true,
+		validators: zod4(deviceSchema),
+		onUpdate: async ({ form }) => {
+			if (!form.valid) return;
+
+			const res = await deviceAPI.create({
+				name: form.data.name,
+				mac: form.data.mac,
+				ip: form.data.ip || undefined
+			});
+
 			if (res.success) {
-				await loadDevices();
-				toast.success(`Device "${name}" added`);
+				await invalidateDevices();
+				toast.success(`Device "${form.data.name}" added`);
 				addDialogOpen = false;
+				addForm.reset();
 			} else {
 				toast.error(res.error || 'Failed to add device');
 			}
 		}
+	});
 
-		submitting = false;
+	// Superform for Edit dialog
+	const editForm = superForm(defaults({ name: '', mac: '', ip: '' }, zod4(deviceSchema)), {
+		SPA: true,
+		validators: zod4(deviceSchema),
+		onUpdate: async ({ form }) => {
+			if (!form.valid || !editingId) return;
+
+			const res = await deviceAPI.update(editingId, {
+				name: form.data.name,
+				mac: form.data.mac,
+				ip: form.data.ip || undefined
+			});
+
+			if (res.success) {
+				await invalidateDevices();
+				toast.success(`Device "${form.data.name}" updated`);
+				editDialogOpen = false;
+				editForm.reset();
+				editingId = null;
+			} else {
+				toast.error(res.error || 'Failed to update device');
+			}
+		}
+	});
+
+	const {
+		form: addFormData,
+		errors: addErrors,
+		enhance: addEnhance,
+		submitting: addSubmitting
+	} = addForm;
+	const {
+		form: editFormData,
+		errors: editErrors,
+		enhance: editEnhance,
+		submitting: editSubmitting
+	} = editForm;
+
+	function openAddDialog() {
+		addForm.reset();
+		addDialogOpen = true;
+	}
+
+	function openEditDialog(device: DeviceStatus) {
+		editingId = device.id;
+		editForm.reset({
+			data: {
+				name: device.name,
+				mac: device.mac,
+				ip: device.ip || ''
+			}
+		});
+		editDialogOpen = true;
 	}
 
 	async function deleteDevice(device: DeviceStatus) {
@@ -96,7 +134,7 @@
 		const res = await deviceAPI.delete(device.id);
 
 		if (res.success) {
-			devices = devices.filter(d => d.id !== device.id);
+			await invalidateDevices();
 			toast.success(`Device "${device.name}" deleted`);
 		} else {
 			toast.error(res.error || 'Failed to delete device');
@@ -116,27 +154,11 @@
 		wakingId = null;
 	}
 
-	function getStatusColor(online: boolean | null): string {
-		if (online === null) return 'text-muted-foreground';
-		return online ? 'text-emerald-500' : 'text-red-500';
+	function getStatusBadge(online: boolean | null | undefined) {
+		if (online === true) return { label: 'Online', variant: 'default' as const, class: 'bg-green-500 hover:bg-green-500' };
+		if (online === false) return { label: 'Offline', variant: 'secondary' as const, class: '' };
+		return { label: 'Unknown', variant: 'outline' as const, class: '' };
 	}
-
-	function getStatusTitle(online: boolean | null): string {
-		if (online === null) return 'No IP configured';
-		return online ? 'Online' : 'Offline';
-	}
-
-	onMount(() => {
-		loadDevices();
-
-		const interval = setInterval(() => {
-			if (!document.hidden) {
-				loadDevices();
-			}
-		}, 30000);
-
-		return () => clearInterval(interval);
-	});
 </script>
 
 <div class="space-y-6">
@@ -156,51 +178,48 @@
 		<Dialog.Content class="sm:max-w-md">
 			<Dialog.Header>
 				<Dialog.Title>Add Device</Dialog.Title>
-				<Dialog.Description>
-					Add a new device for Wake-on-LAN
-				</Dialog.Description>
+				<Dialog.Description>Add a new device for Wake-on-LAN</Dialog.Description>
 			</Dialog.Header>
-			<form onsubmit={(e) => { e.preventDefault(); saveDevice(); }} class="space-y-4">
-				<div class="space-y-2">
-					<label for="name" class="text-sm font-medium">Name</label>
+			<form method="POST" use:addEnhance class="space-y-4">
+				<Field.Field data-invalid={$addErrors.name ? true : undefined}>
+					<Field.Label for="add-name">Name</Field.Label>
+					<Input id="add-name" placeholder="e.g., Desktop PC" bind:value={$addFormData.name} />
+					{#if $addErrors.name}
+						<Field.Error>{$addErrors.name}</Field.Error>
+					{/if}
+				</Field.Field>
+				<Field.Field data-invalid={$addErrors.mac ? true : undefined}>
+					<Field.Label for="add-mac">MAC Address</Field.Label>
 					<Input
-						id="name"
-						placeholder="e.g., Desktop PC"
-						bind:value={name}
-						required
-					/>
-				</div>
-				<div class="space-y-2">
-					<label for="mac" class="text-sm font-medium">MAC Address</label>
-					<Input
-						id="mac"
+						id="add-mac"
 						placeholder="AA:BB:CC:DD:EE:FF"
-						bind:value={mac}
+						bind:value={$addFormData.mac}
 						class="font-mono"
-						required
 					/>
-					<p class="text-xs text-muted-foreground">
-						Format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
-					</p>
-				</div>
-				<div class="space-y-2">
-					<label for="ip" class="text-sm font-medium">IP Address (optional)</label>
+					<Field.Description>Format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF</Field.Description>
+					{#if $addErrors.mac}
+						<Field.Error>{$addErrors.mac}</Field.Error>
+					{/if}
+				</Field.Field>
+				<Field.Field data-invalid={$addErrors.ip ? true : undefined}>
+					<Field.Label for="add-ip">IP Address (optional)</Field.Label>
 					<Input
-						id="ip"
+						id="add-ip"
 						placeholder="192.168.1.100"
-						bind:value={ip}
+						bind:value={$addFormData.ip}
 						class="font-mono"
 					/>
-					<p class="text-xs text-muted-foreground">
-						Used to check online status
-					</p>
-				</div>
+					<Field.Description>Used to check online status</Field.Description>
+					{#if $addErrors.ip}
+						<Field.Error>{$addErrors.ip}</Field.Error>
+					{/if}
+				</Field.Field>
 				<Dialog.Footer>
-					<Button type="button" variant="outline" onclick={() => addDialogOpen = false}>
+					<Button type="button" variant="outline" onclick={() => (addDialogOpen = false)}>
 						Cancel
 					</Button>
-					<Button type="submit" disabled={submitting}>
-						{#if submitting}
+					<Button type="submit" disabled={$addSubmitting}>
+						{#if $addSubmitting}
 							<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
 						{/if}
 						Add Device
@@ -215,51 +234,48 @@
 		<Dialog.Content class="sm:max-w-md">
 			<Dialog.Header>
 				<Dialog.Title>Edit Device</Dialog.Title>
-				<Dialog.Description>
-					Update device information
-				</Dialog.Description>
+				<Dialog.Description>Update device information</Dialog.Description>
 			</Dialog.Header>
-			<form onsubmit={(e) => { e.preventDefault(); saveDevice(); }} class="space-y-4">
-				<div class="space-y-2">
-					<label for="edit-name" class="text-sm font-medium">Name</label>
-					<Input
-						id="edit-name"
-						placeholder="e.g., Desktop PC"
-						bind:value={name}
-						required
-					/>
-				</div>
-				<div class="space-y-2">
-					<label for="edit-mac" class="text-sm font-medium">MAC Address</label>
+			<form method="POST" use:editEnhance class="space-y-4">
+				<Field.Field data-invalid={$editErrors.name ? true : undefined}>
+					<Field.Label for="edit-name">Name</Field.Label>
+					<Input id="edit-name" placeholder="e.g., Desktop PC" bind:value={$editFormData.name} />
+					{#if $editErrors.name}
+						<Field.Error>{$editErrors.name}</Field.Error>
+					{/if}
+				</Field.Field>
+				<Field.Field data-invalid={$editErrors.mac ? true : undefined}>
+					<Field.Label for="edit-mac">MAC Address</Field.Label>
 					<Input
 						id="edit-mac"
 						placeholder="AA:BB:CC:DD:EE:FF"
-						bind:value={mac}
+						bind:value={$editFormData.mac}
 						class="font-mono"
-						required
 					/>
-					<p class="text-xs text-muted-foreground">
-						Format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
-					</p>
-				</div>
-				<div class="space-y-2">
-					<label for="edit-ip" class="text-sm font-medium">IP Address (optional)</label>
+					<Field.Description>Format: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF</Field.Description>
+					{#if $editErrors.mac}
+						<Field.Error>{$editErrors.mac}</Field.Error>
+					{/if}
+				</Field.Field>
+				<Field.Field data-invalid={$editErrors.ip ? true : undefined}>
+					<Field.Label for="edit-ip">IP Address (optional)</Field.Label>
 					<Input
 						id="edit-ip"
 						placeholder="192.168.1.100"
-						bind:value={ip}
+						bind:value={$editFormData.ip}
 						class="font-mono"
 					/>
-					<p class="text-xs text-muted-foreground">
-						Used to check online status
-					</p>
-				</div>
+					<Field.Description>Used to check online status</Field.Description>
+					{#if $editErrors.ip}
+						<Field.Error>{$editErrors.ip}</Field.Error>
+					{/if}
+				</Field.Field>
 				<Dialog.Footer>
-					<Button type="button" variant="outline" onclick={() => editDialogOpen = false}>
+					<Button type="button" variant="outline" onclick={() => (editDialogOpen = false)}>
 						Cancel
 					</Button>
-					<Button type="submit" disabled={submitting}>
-						{#if submitting}
+					<Button type="submit" disabled={$editSubmitting}>
+						{#if $editSubmitting}
 							<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
 						{/if}
 						Save Changes
@@ -270,20 +286,29 @@
 	</Dialog.Root>
 
 	{#if loading}
-		<div class="space-y-2">
-			{#each [1, 2, 3] as _}
-				<Card.Root>
-					<Card.Content class="py-3 px-4">
-						<div class="animate-pulse flex items-center justify-between">
-							<div class="space-y-2">
-								<div class="h-4 bg-muted rounded w-32"></div>
-								<div class="h-3 bg-muted rounded w-40"></div>
-							</div>
-							<div class="h-8 bg-muted rounded w-20"></div>
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/each}
+		<div class="rounded-md border">
+			<Table.Root>
+				<Table.Header>
+					<Table.Row>
+						<Table.Head class="w-24">Status</Table.Head>
+						<Table.Head>Name</Table.Head>
+						<Table.Head>MAC Address</Table.Head>
+						<Table.Head>IP Address</Table.Head>
+						<Table.Head class="w-32 text-right">Actions</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each [1, 2, 3] as _}
+						<Table.Row>
+							<Table.Cell><div class="h-5 w-16 bg-muted rounded animate-pulse"></div></Table.Cell>
+							<Table.Cell><div class="h-4 w-24 bg-muted rounded animate-pulse"></div></Table.Cell>
+							<Table.Cell><div class="h-4 w-32 bg-muted rounded animate-pulse"></div></Table.Cell>
+							<Table.Cell><div class="h-4 w-24 bg-muted rounded animate-pulse"></div></Table.Cell>
+							<Table.Cell><div class="h-8 w-24 bg-muted rounded animate-pulse ml-auto"></div></Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
 		</div>
 	{:else if devices.length === 0}
 		<Card.Root>
@@ -294,61 +319,83 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
-		<div class="space-y-2">
-			{#each devices as device}
-				<Card.Root>
-					<Card.Content class="py-3 px-4 flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							<Circle
-								class="h-3 w-3 fill-current {getStatusColor(device.online)}"
-								title={getStatusTitle(device.online)}
-							/>
-							<div>
-								<h3 class="font-medium">{device.name}</h3>
-								<p class="text-sm text-muted-foreground font-mono">
-									{device.mac}
-									{#if device.ip}
-										<span class="text-muted-foreground/60"> · {device.ip}</span>
-									{/if}
-								</p>
-							</div>
-						</div>
-						<div class="flex items-center gap-2">
-							<Button
-								size="sm"
-								onclick={() => wakeDevice(device)}
-								disabled={wakingId === device.id}
-							>
-								{#if wakingId === device.id}
-									<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
-								{:else}
-									<Power class="h-4 w-4 mr-1" />
-								{/if}
-								Wake
-							</Button>
-							<Button
-								size="sm"
-								variant="outline"
-								onclick={() => openEditDialog(device)}
-							>
-								<Pencil class="h-4 w-4" />
-							</Button>
-							<Button
-								size="sm"
-								variant="destructive"
-								onclick={() => deleteDevice(device)}
-								disabled={deletingId === device.id}
-							>
-								{#if deletingId === device.id}
-									<RefreshCw class="h-4 w-4 animate-spin" />
-								{:else}
-									<Trash2 class="h-4 w-4" />
-								{/if}
-							</Button>
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/each}
+		<div class="rounded-md border">
+			<Table.Root>
+				<Table.Header>
+					<Table.Row>
+						<Table.Head class="w-24">Status</Table.Head>
+						<Table.Head>Name</Table.Head>
+						<Table.Head>MAC Address</Table.Head>
+						<Table.Head>IP Address</Table.Head>
+						<Table.Head class="w-32 text-right">Actions</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each devices as device}
+						{@const status = getStatusBadge(device.online)}
+						<Table.Row>
+							<Table.Cell>
+								<Badge variant={status.variant} class={status.class}>{status.label}</Badge>
+							</Table.Cell>
+							<Table.Cell class="font-medium">{device.name}</Table.Cell>
+							<Table.Cell class="font-mono text-muted-foreground">{device.mac}</Table.Cell>
+							<Table.Cell class="font-mono text-muted-foreground">{device.ip || '—'}</Table.Cell>
+							<Table.Cell class="text-right">
+								<div class="flex justify-end gap-1">
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button
+												size="icon"
+												variant="outline"
+												onclick={() => wakeDevice(device)}
+												disabled={wakingId === device.id}
+											>
+												{#if wakingId === device.id}
+													<RefreshCw class="h-4 w-4 animate-spin" />
+												{:else}
+													<Power class="h-4 w-4" />
+												{/if}
+											</Button>
+										</Tooltip.Trigger>
+										<Tooltip.Content>
+											<p>Wake {device.name}</p>
+										</Tooltip.Content>
+									</Tooltip.Root>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button size="icon" variant="outline" onclick={() => openEditDialog(device)}>
+												<Pencil class="h-4 w-4" />
+											</Button>
+										</Tooltip.Trigger>
+										<Tooltip.Content>
+											<p>Edit device</p>
+										</Tooltip.Content>
+									</Tooltip.Root>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<Button
+												size="icon"
+												variant="destructive"
+												onclick={() => deleteDevice(device)}
+												disabled={deletingId === device.id}
+											>
+												{#if deletingId === device.id}
+													<RefreshCw class="h-4 w-4 animate-spin" />
+												{:else}
+													<Trash2 class="h-4 w-4" />
+												{/if}
+											</Button>
+										</Tooltip.Trigger>
+										<Tooltip.Content>
+											<p>Delete device</p>
+										</Tooltip.Content>
+									</Tooltip.Root>
+								</div>
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
 		</div>
 	{/if}
 </div>
