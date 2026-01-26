@@ -1,15 +1,64 @@
 <script lang="ts">
-	import { configAPI } from '$lib/api';
+	import { onMount } from 'svelte';
+	import { configAPI, versionAPI } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
+	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import Download from '@lucide/svelte/icons/download';
 	import Upload from '@lucide/svelte/icons/upload';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import ArrowUpCircle from '@lucide/svelte/icons/arrow-up-circle';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 
 	let importing = $state(false);
 	let fileInput: HTMLInputElement;
+
+	let currentVersion = $state<string | null>(null);
+	let latestVersion = $state<string | null>(null);
+	let latestUrl = $state<string | null>(null);
+	let checkingUpdate = $state(true);
+
+	const updateAvailable = $derived(
+		currentVersion &&
+			latestVersion &&
+			currentVersion !== 'dev' &&
+			latestVersion !== currentVersion &&
+			compareVersions(latestVersion, currentVersion) > 0
+	);
+
+	function compareVersions(a: string, b: string): number {
+		const partsA = a.replace(/^v/, '').split('.').map(Number);
+		const partsB = b.replace(/^v/, '').split('.').map(Number);
+
+		for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+			const numA = partsA[i] || 0;
+			const numB = partsB[i] || 0;
+			if (numA > numB) return 1;
+			if (numA < numB) return -1;
+		}
+		return 0;
+	}
+
+	async function checkForUpdates() {
+		checkingUpdate = true;
+
+		const [currentRes, latestRes] = await Promise.all([
+			versionAPI.getCurrent(),
+			versionAPI.getLatest()
+		]);
+
+		if (currentRes.success && currentRes.data) {
+			currentVersion = currentRes.data.version;
+		}
+
+		if (latestRes) {
+			latestVersion = latestRes.version;
+			latestUrl = latestRes.url;
+		}
+
+		checkingUpdate = false;
+	}
 
 	function exportConfig() {
 		window.location.href = configAPI.exportUrl;
@@ -32,7 +81,6 @@
 
 		if (res.success) {
 			toast.success('Configuration imported successfully');
-			// Reload the page to reflect changes
 			setTimeout(() => window.location.reload(), 1000);
 		} else {
 			toast.error(res.error || 'Failed to import configuration');
@@ -41,6 +89,10 @@
 		importing = false;
 		input.value = '';
 	}
+
+	onMount(() => {
+		checkForUpdates();
+	});
 </script>
 
 <div class="space-y-6">
@@ -48,6 +100,29 @@
 		<h1 class="text-2xl font-bold">Settings</h1>
 		<p class="text-muted-foreground">Backup and restore your configuration</p>
 	</div>
+
+	<!-- Update Banner -->
+	{#if updateAvailable}
+		<div class="rounded-lg border border-green-500/50 bg-green-500/10 p-4">
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-3">
+					<ArrowUpCircle class="h-5 w-5 text-green-500" />
+					<div>
+						<p class="font-medium text-green-500">Update available!</p>
+						<p class="text-sm text-muted-foreground">
+							Version {latestVersion} is available. You're on {currentVersion}.
+						</p>
+					</div>
+				</div>
+				{#if latestUrl}
+					<Button href={latestUrl} target="_blank" rel="noopener noreferrer" size="sm" variant="outline" class="border-green-500/50 text-green-500 hover:bg-green-500/10">
+						<ExternalLink class="h-4 w-4" />
+						View Release
+					</Button>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<div class="grid gap-6 md:grid-cols-2">
 		<!-- Export -->
@@ -112,7 +187,12 @@
 	<!-- Info -->
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>About WoL-NUT</Card.Title>
+			<Card.Title class="flex items-center justify-between">
+				<span>About WoL-NUT</span>
+				{#if currentVersion}
+					<Badge variant="outline">{currentVersion}</Badge>
+				{/if}
+			</Card.Title>
 		</Card.Header>
 		<Card.Content class="text-sm text-muted-foreground space-y-3">
 			<p>

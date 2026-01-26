@@ -190,7 +190,7 @@
 					</Button>
 					<Button type="submit" disabled={$addSubmitting}>
 						{#if $addSubmitting}
-							<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
+							<RefreshCw class="h-4 w-4 animate-spin" />
 						{/if}
 						Add UPS
 					</Button>
@@ -246,7 +246,7 @@
 					</Button>
 					<Button type="submit" disabled={$editSubmitting}>
 						{#if $editSubmitting}
-							<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
+							<RefreshCw class="h-4 w-4 animate-spin" />
 						{/if}
 						Save Changes
 					</Button>

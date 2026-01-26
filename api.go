@@ -38,6 +38,9 @@ func RegisterAPIHandlers(mux *http.ServeMux, state *AppState, statusCache *Statu
 
 	// Health check
 	mux.HandleFunc("GET /api/health", handleAPIHealth())
+
+	// Version
+	mux.HandleFunc("GET /api/version", handleAPIVersion())
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -303,5 +306,16 @@ func handleAPIImport(state *AppState) http.HandlerFunc {
 func handleAPIHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
+// Version
+
+func handleAPIVersion() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeSuccess(w, map[string]string{
+			"version": version,
+			"commit":  commit,
+		})
 	}
 }

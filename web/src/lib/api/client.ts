@@ -113,3 +113,24 @@ export const configAPI = {
 export const healthAPI = {
 	check: () => fetchAPI<{ status: string }>('/health')
 };
+
+// Version API
+export const versionAPI = {
+	getCurrent: () => fetchAPI<{ version: string; commit: string }>('/version'),
+
+	getLatest: async (): Promise<{ version: string; url: string } | null> => {
+		try {
+			const response = await fetch(
+				'https://api.github.com/repos/aloks98/wolnut/releases/latest'
+			);
+			if (!response.ok) return null;
+			const data = await response.json();
+			return {
+				version: data.tag_name?.replace(/^v/, '') || data.name,
+				url: data.html_url
+			};
+		} catch {
+			return null;
+		}
+	}
+};

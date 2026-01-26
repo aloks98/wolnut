@@ -115,7 +115,7 @@
 					</span>
 				{/if}
 				<Button variant="outline" size="sm" onclick={refreshUPS} disabled={upsRefreshing}>
-					<RefreshCw class="h-4 w-4 mr-1 {upsRefreshing ? 'animate-spin' : ''}" />
+					<RefreshCw class="h-4 w-4 {upsRefreshing ? 'animate-spin' : ''}" />
 					Refresh
 				</Button>
 			</div>
@@ -370,7 +370,7 @@
 					</span>
 				{/if}
 				<Button variant="outline" size="sm" onclick={refreshDevices} disabled={devicesRefreshing}>
-					<RefreshCw class="h-4 w-4 mr-1 {devicesRefreshing ? 'animate-spin' : ''}" />
+					<RefreshCw class="h-4 w-4 {devicesRefreshing ? 'animate-spin' : ''}" />
 					Refresh
 				</Button>
 			</div>

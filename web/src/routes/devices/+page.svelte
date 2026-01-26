@@ -168,7 +168,7 @@
 			<p class="text-muted-foreground">Manage your Wake-on-LAN devices</p>
 		</div>
 		<Button onclick={openAddDialog}>
-			<Plus class="h-4 w-4 mr-1" />
+			<Plus class="h-4 w-4" />
 			Add Device
 		</Button>
 	</div>
@@ -220,7 +220,7 @@
 					</Button>
 					<Button type="submit" disabled={$addSubmitting}>
 						{#if $addSubmitting}
-							<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
+							<RefreshCw class="h-4 w-4 animate-spin" />
 						{/if}
 						Add Device
 					</Button>
@@ -276,7 +276,7 @@
 					</Button>
 					<Button type="submit" disabled={$editSubmitting}>
 						{#if $editSubmitting}
-							<RefreshCw class="h-4 w-4 mr-1 animate-spin" />
+							<RefreshCw class="h-4 w-4 animate-spin" />
 						{/if}
 						Save Changes
 					</Button>
