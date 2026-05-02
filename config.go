@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -9,6 +11,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrNotFound is returned by Update*/Delete* when no entry matches the given ID.
+var ErrNotFound = errors.New("not found")
 
 type ServerConfig struct {
 	Port int    `yaml:"port"`
@@ -66,7 +71,9 @@ func LoadConfig(path string) (Config, error) {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err == nil {
-			yaml.Unmarshal(data, &cfg)
+			if err := yaml.Unmarshal(data, &cfg); err != nil {
+				return cfg, fmt.Errorf("parse %s: %w", path, err)
+			}
 		}
 	}
 
@@ -132,7 +139,30 @@ func (s *AppState) saveDataLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.dataFilePath(), data, 0644)
+
+	target := s.dataFilePath()
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".data.json.*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, target)
 }
 
 func (s *AppState) AddDevice(device Device) error {
@@ -153,7 +183,7 @@ func (s *AppState) UpdateDevice(device Device) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) DeleteDevice(id string) error {
@@ -166,7 +196,7 @@ func (s *AppState) DeleteDevice(id string) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) GetDevice(id string) (Device, bool) {
@@ -208,7 +238,7 @@ func (s *AppState) UpdateUPS(ups UPSEntry) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) DeleteUPS(id string) error {
@@ -221,7 +251,7 @@ func (s *AppState) DeleteUPS(id string) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) GetUPSList() []UPSEntry {

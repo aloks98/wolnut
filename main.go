@@ -104,16 +104,23 @@ func main() {
 	}
 }
 
-// corsMiddleware adds CORS headers for development
+// corsMiddleware adds CORS headers when WOLNUT_CORS_ORIGIN is set.
+// Default (unset) sends no CORS header — same-origin only, which is correct
+// for production when the SPA and API ship from the same binary.
+// Set WOLNUT_CORS_ORIGIN=* during local frontend dev (vite on a different port).
 func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	origin := os.Getenv("WOLNUT_CORS_ORIGIN")
 
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)

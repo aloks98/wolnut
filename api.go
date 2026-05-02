@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -123,6 +124,10 @@ func handleAPIUpdateDevice(state *AppState) http.HandlerFunc {
 		}
 
 		if err := state.UpdateDevice(device); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "Device not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "Failed to update device")
 			return
 		}
@@ -140,6 +145,10 @@ func handleAPIDeleteDevice(state *AppState) http.HandlerFunc {
 		}
 
 		if err := state.DeleteDevice(id); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "Device not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "Failed to delete device")
 			return
 		}
@@ -233,6 +242,10 @@ func handleAPIUpdateUPS(state *AppState) http.HandlerFunc {
 		ups.ID = id
 
 		if err := state.UpdateUPS(ups); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "UPS not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "Failed to update UPS")
 			return
 		}
@@ -250,6 +263,10 @@ func handleAPIDeleteUPS(state *AppState) http.HandlerFunc {
 		}
 
 		if err := state.DeleteUPS(id); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "UPS not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "Failed to delete UPS")
 			return
 		}
@@ -277,18 +294,26 @@ func handleAPIExport(state *AppState) http.HandlerFunc {
 	}
 }
 
+const maxImportSize = 1 << 20 // 1 MiB — plenty for a JSON config
+
 func handleAPIImport(state *AppState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxImportSize)
+
 		file, _, err := r.FormFile("file")
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "No file uploaded")
+			writeError(w, http.StatusBadRequest, "No file uploaded or file too large")
 			return
 		}
 		defer file.Close()
 
-		data, err := io.ReadAll(file)
+		data, err := io.ReadAll(io.LimitReader(file, maxImportSize+1))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "Failed to read file")
+			return
+		}
+		if int64(len(data)) > maxImportSize {
+			writeError(w, http.StatusRequestEntityTooLarge, "File exceeds 1 MiB limit")
 			return
 		}
 

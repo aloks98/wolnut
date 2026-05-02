@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -97,6 +98,7 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	// Read response
 	vars := make(map[string]string)
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 1<<20) // up to 1 MiB per token
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -277,17 +279,25 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	return status, nil
 }
 
-// QueryAllUPS queries all configured UPS units
+// QueryAllUPS queries all configured UPS units in parallel.
+// Total wall time is bounded by the slowest single UPS (connectTimeout+readTimeout)
+// instead of the sum across all UPSes.
 func QueryAllUPS(upsList []UPSEntry) []UPSStatus {
 	statuses := make([]UPSStatus, len(upsList))
+	var wg sync.WaitGroup
 
 	for i, ups := range upsList {
-		status, _ := QueryUPS(ups.Host, ups.UPSName)
-		status.ID = ups.ID
-		status.Name = ups.Name
-		statuses[i] = status
+		wg.Add(1)
+		go func(idx int, u UPSEntry) {
+			defer wg.Done()
+			status, _ := QueryUPS(u.Host, u.UPSName)
+			status.ID = u.ID
+			status.Name = u.Name
+			statuses[idx] = status
+		}(i, ups)
 	}
 
+	wg.Wait()
 	return statuses
 }
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { upsAPI } from '$lib/api';
 	import type { UPSEntry } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
@@ -13,18 +12,38 @@
 	import { superForm, defaults } from 'sveltekit-superforms';
 	import { zod4 } from 'sveltekit-superforms/adapters';
 	import { upsSchema } from '$lib/schemas';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Zap from '@lucide/svelte/icons/zap';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
-	let upsList = $state<UPSEntry[]>([]);
-	let loading = $state(true);
 	let addDialogOpen = $state(false);
 	let editDialogOpen = $state(false);
 	let deletingId = $state<string | null>(null);
 	let editingId = $state<string | null>(null);
+
+	const queryClient = useQueryClient();
+
+	const upsQuery = createQuery(() => ({
+		queryKey: ['ups', 'list'],
+		queryFn: async () => {
+			const res = await upsAPI.getAll();
+			if (res.success && res.data) {
+				return res.data;
+			}
+			throw new Error(res.error || 'Failed to fetch UPS list');
+		}
+	}));
+
+	const upsList = $derived(upsQuery.data ?? []);
+	const loading = $derived(upsQuery.isLoading);
+	const loadError = $derived(upsQuery.isError ? (upsQuery.error as Error).message : null);
+
+	async function invalidateUPS() {
+		await queryClient.invalidateQueries({ queryKey: ['ups', 'list'] });
+	}
 
 	// Superform for Add dialog
 	const addForm = superForm(defaults({ name: '', host: '', ups_name: 'ups' }, zod4(upsSchema)), {
@@ -39,8 +58,8 @@
 				ups_name: form.data.ups_name
 			});
 
-			if (res.success && res.data) {
-				upsList = [...upsList, res.data];
+			if (res.success) {
+				await invalidateUPS();
 				toast.success(`UPS "${form.data.name}" added`);
 				addDialogOpen = false;
 				addForm.reset();
@@ -64,7 +83,7 @@
 			});
 
 			if (res.success) {
-				await loadUPS();
+				await invalidateUPS();
 				toast.success(`UPS "${form.data.name}" updated`);
 				editDialogOpen = false;
 				editForm.reset();
@@ -88,14 +107,6 @@
 		submitting: editSubmitting
 	} = editForm;
 
-	async function loadUPS() {
-		const res = await upsAPI.getAll();
-		if (res.success && res.data) {
-			upsList = res.data;
-		}
-		loading = false;
-	}
-
 	function openAddDialog() {
 		addForm.reset();
 		addDialogOpen = true;
@@ -118,17 +129,13 @@
 		const res = await upsAPI.delete(ups.id);
 
 		if (res.success) {
-			upsList = upsList.filter((u) => u.id !== ups.id);
+			await invalidateUPS();
 			toast.success(`UPS "${ups.name}" deleted`);
 		} else {
 			toast.error(res.error || 'Failed to delete UPS');
 		}
 		deletingId = null;
 	}
-
-	onMount(() => {
-		loadUPS();
-	});
 </script>
 
 <div class="space-y-6">
@@ -255,7 +262,19 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
-	{#if loading}
+	{#if loadError}
+		<Card.Root>
+			<Card.Content class="p-12 text-center">
+				<Zap class="h-12 w-12 mx-auto mb-4 opacity-50 text-destructive" />
+				<p class="mb-2 font-medium">Couldn't load UPS list</p>
+				<p class="text-sm text-muted-foreground mb-4">{loadError}</p>
+				<Button variant="outline" onclick={() => invalidateUPS()}>
+					<RefreshCw class="h-4 w-4" />
+					Retry
+				</Button>
+			</Card.Content>
+		</Card.Root>
+	{:else if loading}
 		<div class="rounded-md border">
 			<Table.Root>
 				<Table.Header>
