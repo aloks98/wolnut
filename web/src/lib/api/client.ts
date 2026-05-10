@@ -14,17 +14,37 @@ async function fetchAPI<T>(
 	endpoint: string,
 	options?: RequestInit
 ): Promise<APIResponse<T>> {
+	const isFormData = options?.body instanceof FormData;
+	// FormData sets its own Content-Type with the multipart boundary —
+	// don't override it.
+	const baseHeaders: HeadersInit = isFormData
+		? { ...options?.headers }
+		: { 'Content-Type': 'application/json', ...options?.headers };
+
 	try {
 		const response = await fetch(`${BASE_URL}${endpoint}`, {
-			headers: {
-				'Content-Type': 'application/json',
-				...options?.headers
-			},
-			...options
+			...options,
+			headers: baseHeaders
 		});
 
-		const data = await response.json();
-		return data;
+		if (!response.ok) {
+			let detail = '';
+			try {
+				const body = await response.text();
+				const parsed = body ? JSON.parse(body) : null;
+				detail = parsed?.error || body.slice(0, 200);
+			} catch {
+				// non-JSON body (e.g. proxy 502 HTML) — leave detail empty
+			}
+			return {
+				success: false,
+				error: detail
+					? `HTTP ${response.status}: ${detail}`
+					: `HTTP ${response.status}`
+			};
+		}
+
+		return await response.json();
 	} catch (error) {
 		return {
 			success: false,
@@ -90,22 +110,13 @@ export const upsAPI = {
 export const configAPI = {
 	exportUrl: `${BASE_URL}/config/export`,
 
-	import: async (file: File) => {
+	import: (file: File) => {
 		const formData = new FormData();
 		formData.append('file', file);
-
-		try {
-			const response = await fetch(`${BASE_URL}/config/import`, {
-				method: 'POST',
-				body: formData
-			});
-			return await response.json();
-		} catch (error) {
-			return {
-				success: false,
-				error: error instanceof Error ? error.message : 'Unknown error'
-			};
-		}
+		return fetchAPI<{ message: string }>('/config/import', {
+			method: 'POST',
+			body: formData
+		});
 	}
 };
 
@@ -118,19 +129,11 @@ export const healthAPI = {
 export const versionAPI = {
 	getCurrent: () => fetchAPI<{ version: string; commit: string }>('/version'),
 
+	// Proxied through the Go backend (with TTL cache) so we don't burn the
+	// unauthenticated GitHub rate limit per browser tab.
 	getLatest: async (): Promise<{ version: string; url: string } | null> => {
-		try {
-			const response = await fetch(
-				'https://api.github.com/repos/aloks98/wolnut/releases/latest'
-			);
-			if (!response.ok) return null;
-			const data = await response.json();
-			return {
-				version: data.tag_name?.replace(/^v/, '') || data.name,
-				url: data.html_url
-			};
-		} catch {
-			return null;
-		}
+		const res = await fetchAPI<{ version: string; url: string }>('/version/latest');
+		if (res.success && res.data) return res.data;
+		return null;
 	}
 };

@@ -1,5 +1,7 @@
-# Frontend build stage - use slim (Debian) for better native module compatibility
-FROM node:22-slim AS frontend
+# Frontend build stage - use slim (Debian) for better native module compatibility.
+# Pin to a specific patch tag; the frontend gets compiled into the binary, so a
+# silently-rolled Node minor would change shipped artifacts without any code change.
+FROM node:22.12.0-slim AS frontend
 
 WORKDIR /app/web
 

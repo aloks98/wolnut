@@ -16,13 +16,11 @@ Lightweight Wake-on-LAN and NUT UPS monitoring dashboard for Raspberry Pi and Li
 ## Screenshots
 
 The dashboard displays:
-- Battery charge with donut chart
-- Load percentage with donut chart
-- Runtime remaining
+- Headline UPS status ("On grid power" / "On battery" / "Battery low") with at-a-glance color and icon
+- Battery charge, load, and runtime
 - Power draw (current and nominal wattage)
 - Input/output voltage and frequency
-- Battery voltage and temperature
-- Raw UPS status codes
+- Raw NUT status codes
 
 ## Quick Install
 
@@ -139,7 +137,7 @@ curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/unins
 | GET | `/api/ups/status` | Get all UPS statuses with detailed info |
 | GET | `/api/config/export` | Export data.json backup |
 | POST | `/api/config/import` | Import data.json backup |
-| GET | `/health` | Health check |
+| GET | `/api/health` | Health check |
 
 ### UPS Status Response
 
@@ -226,7 +224,6 @@ docker compose up
 | Frontend Framework | SvelteKit (static) |
 | UI Components | shadcn-svelte |
 | Styling | Tailwind CSS v4 |
-| Charts | Layerchart |
 | State Management | Svelte 5 runes |
 | Backend | Go (net/http) |
 | Data Storage | JSON file |

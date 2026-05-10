@@ -1,27 +1,33 @@
-<script lang="ts">
-	import '../app.css';
+<script module lang="ts">
 	import { browser } from '$app/environment';
-	import { ModeWatcher } from 'mode-watcher';
-	import { Toaster } from '$lib/components/ui/sonner';
-	import { Nav } from '$lib/components/layout';
-	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
-	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { QueryClient } from '@tanstack/svelte-query';
 
-	let { children } = $props();
-
+	// Module-scoped so the cache survives HMR and the instance is stable
+	// across layout remounts.
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: {
 				enabled: browser,
-				staleTime: 1000 * 30, // 30 seconds
+				staleTime: 1000 * 30,
 				refetchOnWindowFocus: true
 			}
 		}
 	});
 </script>
 
+<script lang="ts">
+	import '../app.css';
+	import { ModeWatcher } from 'mode-watcher';
+	import { Toaster } from '$lib/components/ui/sonner';
+	import { Nav } from '$lib/components/layout';
+	import { QueryClientProvider } from '@tanstack/svelte-query';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+
+	let { children } = $props();
+</script>
+
 <svelte:head>
-	<title>WoL-NUT</title>
+	<title>WolNUT</title>
 </svelte:head>
 
 <ModeWatcher defaultMode="dark" />
