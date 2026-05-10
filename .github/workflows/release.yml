@@ -76,7 +76,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          # node:24-slim doesn't ship a linux/arm/v7 manifest (Node dropped
+          # 32-bit ARM around v23). Pi armv7 + Docker users are covered by
+          # the wol-nut-linux-armv7 binary uploaded above.
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             VERSION=${{ steps.version.outputs.VERSION }}
