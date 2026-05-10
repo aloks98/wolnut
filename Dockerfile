@@ -1,12 +1,19 @@
 # Frontend build stage - use slim (Debian) for better native module compatibility.
 # Pin to a specific patch tag; the frontend gets compiled into the binary, so a
 # silently-rolled Node minor would change shipped artifacts without any code change.
-FROM node:22.12.0-slim AS frontend
+#
+# Node >= 22.13.1 is required: earlier 22.x patches ship corepack 0.30 which
+# fails `corepack prepare pnpm@latest` with "Cannot find matching keyid"
+# because its baked-in key set predates current pnpm signing keys.
+FROM node:22.14.0-slim AS frontend
 
 WORKDIR /app/web
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# `corepack enable` is enough — when `pnpm install` runs below, corepack reads
+# the `packageManager` field from package.json and pulls that exact pnpm
+# version (with integrity hash). Avoids `pnpm@latest` floating to a version
+# that doesn't match local dev, and sidesteps the signature-verification bug.
+RUN corepack enable
 
 # Install dependencies
 COPY web/package.json web/pnpm-lock.yaml ./
