@@ -1,0 +1,5 @@
+# pnpm 10+ moved package-level config out of package.json. This file holds
+# the approved-builds list — packages allowed to run lifecycle scripts during
+# install. esbuild needs to compile its native binary at install time.
+allowBuilds:
+  esbuild: true
