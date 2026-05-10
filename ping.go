@@ -148,24 +148,3 @@ func CheckDeviceOnline(ip string) bool {
 	return false
 }
 
-// GetDevicesStatus returns all devices with their online status (non-cached, for backwards compatibility)
-func GetDevicesStatus(devices []Device) []DeviceStatus {
-	statuses := make([]DeviceStatus, len(devices))
-	var wg sync.WaitGroup
-
-	for i, device := range devices {
-		statuses[i] = DeviceStatus{Device: device}
-
-		if device.IP != "" {
-			wg.Add(1)
-			go func(idx int, ip string) {
-				defer wg.Done()
-				online := CheckDeviceOnline(ip)
-				statuses[idx].Online = &online
-			}(i, device.IP)
-		}
-	}
-
-	wg.Wait()
-	return statuses
-}

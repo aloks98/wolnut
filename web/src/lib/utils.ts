@@ -36,32 +36,21 @@ export function formatWattage(watts: number): string {
 	return `${Math.round(watts)}W`;
 }
 
-// Color utilities for status indicators
-export function getBatteryColor(charge: number): string {
-	if (charge > 50) return '#22c55e'; // green-500
-	if (charge > 20) return '#f59e0b'; // amber-500
-	return '#ef4444'; // red-500
+// Status helpers — semantic palette per app.css:
+//   healthy → emerald-500 · warning → amber-500 · critical → red-500 · unknown → muted
+
+// Standard badge recipe for online/offline state.  Used on the dashboard
+// device row and the devices page status column so both render identically.
+export function deviceStatusBadgeClass(online: boolean | null | undefined): string {
+	if (online === null || online === undefined) {
+		return 'bg-muted/50 text-muted-foreground border-muted';
+	}
+	if (online) return 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20';
+	return 'bg-red-500/15 text-red-500 border-red-500/20';
 }
 
-export function getBatteryTextColor(charge: number): string {
-	if (charge > 50) return 'text-emerald-500';
-	if (charge > 20) return 'text-amber-500';
-	return 'text-red-500';
-}
-
-export function getLoadColor(load: number): string {
-	if (load < 50) return '#22c55e'; // green
-	if (load < 80) return '#f59e0b'; // amber
-	return '#ef4444'; // red
-}
-
-export function getDeviceStatusColor(online: boolean | null): string {
-	if (online === null) return 'text-muted-foreground';
-	return online ? 'text-emerald-500' : 'text-red-500';
-}
-
-export function getDeviceStatusTitle(online: boolean | null): string {
-	if (online === null) return 'No IP configured';
+export function deviceStatusLabel(online: boolean | null | undefined): string {
+	if (online === null || online === undefined) return 'Unknown';
 	return online ? 'Online' : 'Offline';
 }
 

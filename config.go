@@ -2,13 +2,29 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
+
+// reservedIDs are path segments under /api/devices/ and /api/ups/ that would
+// shadow CRUD routes if used as an entity ID.  Server-generated UUIDs never
+// hit these, but an imported data.json could.
+var reservedIDs = map[string]bool{
+	"status": true,
+	"wake":   true,
+	"":       true,
+}
+
+// ErrNotFound is returned by Update*/Delete* when no entry matches the given ID.
+var ErrNotFound = errors.New("not found")
 
 type ServerConfig struct {
 	Port int    `yaml:"port"`
@@ -66,15 +82,19 @@ func LoadConfig(path string) (Config, error) {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err == nil {
-			yaml.Unmarshal(data, &cfg)
+			if err := yaml.Unmarshal(data, &cfg); err != nil {
+				return cfg, fmt.Errorf("parse %s: %w", path, err)
+			}
 		}
 	}
 
 	// Environment overrides
 	if v := os.Getenv("WOLNUT_SERVER_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.Server.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return cfg, fmt.Errorf("WOLNUT_SERVER_PORT: not a number: %q", v)
 		}
+		cfg.Server.Port = port
 	}
 	if v := os.Getenv("WOLNUT_SERVER_HOST"); v != "" {
 		cfg.Server.Host = v
@@ -84,6 +104,10 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if v := os.Getenv("WOLNUT_LOG_LEVEL"); v != "" {
 		cfg.Log.Level = v
+	}
+
+	if cfg.Server.Port < 1 || cfg.Server.Port > 65535 {
+		return cfg, fmt.Errorf("server.port %d out of range (1-65535)", cfg.Server.Port)
 	}
 
 	return cfg, nil
@@ -132,7 +156,30 @@ func (s *AppState) saveDataLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.dataFilePath(), data, 0644)
+
+	target := s.dataFilePath()
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".data.json.*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, target)
 }
 
 func (s *AppState) AddDevice(device Device) error {
@@ -153,7 +200,7 @@ func (s *AppState) UpdateDevice(device Device) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) DeleteDevice(id string) error {
@@ -166,7 +213,7 @@ func (s *AppState) DeleteDevice(id string) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) GetDevice(id string) (Device, bool) {
@@ -208,7 +255,7 @@ func (s *AppState) UpdateUPS(ups UPSEntry) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) DeleteUPS(id string) error {
@@ -221,7 +268,7 @@ func (s *AppState) DeleteUPS(id string) error {
 			return s.saveDataLocked()
 		}
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *AppState) GetUPSList() []UPSEntry {
@@ -233,23 +280,68 @@ func (s *AppState) GetUPSList() []UPSEntry {
 	return upsList
 }
 
-func (s *AppState) GetRawData() []byte {
+func (s *AppState) GetRawData() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	data, _ := json.MarshalIndent(s.Data, "", "  ")
-	return data
+	return json.MarshalIndent(s.Data, "", "  ")
 }
 
 func (s *AppState) ImportData(data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	var newData AppData
 	if err := json.Unmarshal(data, &newData); err != nil {
 		return err
 	}
 
+	if err := validateAppData(&newData); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.Data = newData
 	return s.saveDataLocked()
+}
+
+// validateAppData enforces the same constraints as the HTTP handlers and
+// rewrites IDs that are missing, duplicated, or reserved so an imported
+// data.json can't shadow CRUD routes (e.g. id == "status") or create
+// unaddressable entries.
+func validateAppData(d *AppData) error {
+	seen := make(map[string]bool)
+	for i := range d.Devices {
+		dev := &d.Devices[i]
+		if dev.Name == "" || len(dev.Name) > 128 {
+			return fmt.Errorf("device %d: name is required and must be <=128 chars", i)
+		}
+		dev.MAC = NormalizeMAC(dev.MAC)
+		if !ValidateMAC(dev.MAC) {
+			return fmt.Errorf("device %q: invalid MAC address", dev.Name)
+		}
+		if dev.IP != "" && net.ParseIP(dev.IP) == nil {
+			return fmt.Errorf("device %q: invalid IP address %q", dev.Name, dev.IP)
+		}
+		if dev.ID == "" || reservedIDs[dev.ID] || seen[dev.ID] {
+			dev.ID = uuid.New().String()
+		}
+		seen[dev.ID] = true
+	}
+
+	seenUPS := make(map[string]bool)
+	for i := range d.UPSList {
+		u := &d.UPSList[i]
+		if u.Name == "" || len(u.Name) > 128 {
+			return fmt.Errorf("ups %d: name is required and must be <=128 chars", i)
+		}
+		if !ValidateUPSHost(u.Host) {
+			return fmt.Errorf("ups %q: invalid host %q", u.Name, u.Host)
+		}
+		if !ValidateUPSName(u.UPSName) {
+			return fmt.Errorf("ups %q: invalid ups_name %q", u.Name, u.UPSName)
+		}
+		if u.ID == "" || reservedIDs[u.ID] || seenUPS[u.ID] {
+			u.ID = uuid.New().String()
+		}
+		seenUPS[u.ID] = true
+	}
+	return nil
 }

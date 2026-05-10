@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { upsAPI } from '$lib/api';
 	import type { UPSEntry } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
@@ -13,18 +12,39 @@
 	import { superForm, defaults } from 'sveltekit-superforms';
 	import { zod4 } from 'sveltekit-superforms/adapters';
 	import { upsSchema } from '$lib/schemas';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Zap from '@lucide/svelte/icons/zap';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
-	let upsList = $state<UPSEntry[]>([]);
-	let loading = $state(true);
 	let addDialogOpen = $state(false);
 	let editDialogOpen = $state(false);
 	let deletingId = $state<string | null>(null);
 	let editingId = $state<string | null>(null);
+	let pendingDelete = $state<UPSEntry | null>(null);
+
+	const queryClient = useQueryClient();
+
+	const upsQuery = createQuery(() => ({
+		queryKey: ['ups', 'list'],
+		queryFn: async () => {
+			const res = await upsAPI.getAll();
+			if (res.success && res.data) {
+				return res.data;
+			}
+			throw new Error(res.error || 'Failed to fetch UPS list');
+		}
+	}));
+
+	const upsList = $derived(upsQuery.data ?? []);
+	const loading = $derived(upsQuery.isLoading);
+	const loadError = $derived(upsQuery.isError ? (upsQuery.error as Error).message : null);
+
+	async function invalidateUPS() {
+		await queryClient.invalidateQueries({ queryKey: ['ups', 'list'] });
+	}
 
 	// Superform for Add dialog
 	const addForm = superForm(defaults({ name: '', host: '', ups_name: 'ups' }, zod4(upsSchema)), {
@@ -39,8 +59,8 @@
 				ups_name: form.data.ups_name
 			});
 
-			if (res.success && res.data) {
-				upsList = [...upsList, res.data];
+			if (res.success) {
+				await invalidateUPS();
 				toast.success(`UPS "${form.data.name}" added`);
 				addDialogOpen = false;
 				addForm.reset();
@@ -64,7 +84,7 @@
 			});
 
 			if (res.success) {
-				await loadUPS();
+				await invalidateUPS();
 				toast.success(`UPS "${form.data.name}" updated`);
 				editDialogOpen = false;
 				editForm.reset();
@@ -88,14 +108,6 @@
 		submitting: editSubmitting
 	} = editForm;
 
-	async function loadUPS() {
-		const res = await upsAPI.getAll();
-		if (res.success && res.data) {
-			upsList = res.data;
-		}
-		loading = false;
-	}
-
 	function openAddDialog() {
 		addForm.reset();
 		addDialogOpen = true;
@@ -113,28 +125,37 @@
 		editDialogOpen = true;
 	}
 
-	async function deleteUPS(ups: UPSEntry) {
-		deletingId = ups.id;
-		const res = await upsAPI.delete(ups.id);
-
-		if (res.success) {
-			upsList = upsList.filter((u) => u.id !== ups.id);
-			toast.success(`UPS "${ups.name}" deleted`);
-		} else {
-			toast.error(res.error || 'Failed to delete UPS');
-		}
-		deletingId = null;
+	function requestDelete(ups: UPSEntry) {
+		pendingDelete = ups;
 	}
 
-	onMount(() => {
-		loadUPS();
-	});
+	async function confirmDelete() {
+		const ups = pendingDelete;
+		if (!ups) return;
+		deletingId = ups.id;
+		pendingDelete = null;
+		try {
+			const res = await upsAPI.delete(ups.id);
+			if (res.success) {
+				await invalidateUPS();
+				toast.success(`UPS "${ups.name}" deleted`);
+			} else {
+				toast.error(res.error || 'Failed to delete UPS');
+			}
+		} finally {
+			deletingId = null;
+		}
+	}
 </script>
+
+<svelte:head>
+	<title>UPS · WolNUT</title>
+</svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-bold">UPS Connections</h1>
+			<h1 class="text-2xl font-semibold tracking-tight">UPS Connections</h1>
 			<p class="text-muted-foreground">Manage your NUT UPS server connections</p>
 		</div>
 		<Button onclick={openAddDialog}>
@@ -153,9 +174,15 @@
 			<form method="POST" use:addEnhance class="space-y-4">
 				<Field.Field data-invalid={$addErrors.name ? true : undefined}>
 					<Field.Label for="add-name">Display Name</Field.Label>
-					<Input id="add-name" placeholder="e.g., Office UPS" bind:value={$addFormData.name} />
+					<Input
+						id="add-name"
+						placeholder="e.g., Office UPS"
+						bind:value={$addFormData.name}
+						aria-invalid={$addErrors.name ? 'true' : undefined}
+						aria-describedby={$addErrors.name ? 'add-name-error' : undefined}
+					/>
 					{#if $addErrors.name}
-						<Field.Error>{$addErrors.name}</Field.Error>
+						<Field.Error id="add-name-error">{$addErrors.name}</Field.Error>
 					{/if}
 				</Field.Field>
 				<Field.Field data-invalid={$addErrors.host ? true : undefined}>
@@ -165,10 +192,12 @@
 						placeholder="localhost:3493"
 						bind:value={$addFormData.host}
 						class="font-mono"
+						aria-invalid={$addErrors.host ? 'true' : undefined}
+						aria-describedby={$addErrors.host ? 'add-host-error' : 'add-host-help'}
 					/>
-					<Field.Description>Host and port of the NUT server (default port: 3493)</Field.Description>
+					<Field.Description id="add-host-help">Host and port of the NUT server (default port: 3493)</Field.Description>
 					{#if $addErrors.host}
-						<Field.Error>{$addErrors.host}</Field.Error>
+						<Field.Error id="add-host-error">{$addErrors.host}</Field.Error>
 					{/if}
 				</Field.Field>
 				<Field.Field data-invalid={$addErrors.ups_name ? true : undefined}>
@@ -178,10 +207,12 @@
 						placeholder="ups"
 						bind:value={$addFormData.ups_name}
 						class="font-mono"
+						aria-invalid={$addErrors.ups_name ? 'true' : undefined}
+						aria-describedby={$addErrors.ups_name ? 'add-ups-name-error' : 'add-ups-name-help'}
 					/>
-					<Field.Description>UPS identifier as configured in NUT (usually "ups")</Field.Description>
+					<Field.Description id="add-ups-name-help">UPS identifier as configured in NUT (usually "ups")</Field.Description>
 					{#if $addErrors.ups_name}
-						<Field.Error>{$addErrors.ups_name}</Field.Error>
+						<Field.Error id="add-ups-name-error">{$addErrors.ups_name}</Field.Error>
 					{/if}
 				</Field.Field>
 				<Dialog.Footer>
@@ -199,6 +230,31 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
+	<!-- Delete Confirm Dialog -->
+	<Dialog.Root
+		open={pendingDelete !== null}
+		onOpenChange={(o) => {
+			if (!o) pendingDelete = null;
+		}}
+	>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Delete UPS connection?</Dialog.Title>
+				<Dialog.Description>
+					"{pendingDelete?.name}" will be removed permanently. This cannot be undone.
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (pendingDelete = null)}>
+					Cancel
+				</Button>
+				<Button type="button" variant="destructive" onclick={confirmDelete}>
+					Delete
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
 	<!-- Edit Dialog -->
 	<Dialog.Root bind:open={editDialogOpen}>
 		<Dialog.Content class="sm:max-w-md">
@@ -209,9 +265,15 @@
 			<form method="POST" use:editEnhance class="space-y-4">
 				<Field.Field data-invalid={$editErrors.name ? true : undefined}>
 					<Field.Label for="edit-name">Display Name</Field.Label>
-					<Input id="edit-name" placeholder="e.g., Office UPS" bind:value={$editFormData.name} />
+					<Input
+						id="edit-name"
+						placeholder="e.g., Office UPS"
+						bind:value={$editFormData.name}
+						aria-invalid={$editErrors.name ? 'true' : undefined}
+						aria-describedby={$editErrors.name ? 'edit-name-error' : undefined}
+					/>
 					{#if $editErrors.name}
-						<Field.Error>{$editErrors.name}</Field.Error>
+						<Field.Error id="edit-name-error">{$editErrors.name}</Field.Error>
 					{/if}
 				</Field.Field>
 				<Field.Field data-invalid={$editErrors.host ? true : undefined}>
@@ -221,10 +283,12 @@
 						placeholder="localhost:3493"
 						bind:value={$editFormData.host}
 						class="font-mono"
+						aria-invalid={$editErrors.host ? 'true' : undefined}
+						aria-describedby={$editErrors.host ? 'edit-host-error' : 'edit-host-help'}
 					/>
-					<Field.Description>Host and port of the NUT server (default port: 3493)</Field.Description>
+					<Field.Description id="edit-host-help">Host and port of the NUT server (default port: 3493)</Field.Description>
 					{#if $editErrors.host}
-						<Field.Error>{$editErrors.host}</Field.Error>
+						<Field.Error id="edit-host-error">{$editErrors.host}</Field.Error>
 					{/if}
 				</Field.Field>
 				<Field.Field data-invalid={$editErrors.ups_name ? true : undefined}>
@@ -234,10 +298,12 @@
 						placeholder="ups"
 						bind:value={$editFormData.ups_name}
 						class="font-mono"
+						aria-invalid={$editErrors.ups_name ? 'true' : undefined}
+						aria-describedby={$editErrors.ups_name ? 'edit-ups-name-error' : 'edit-ups-name-help'}
 					/>
-					<Field.Description>UPS identifier as configured in NUT (usually "ups")</Field.Description>
+					<Field.Description id="edit-ups-name-help">UPS identifier as configured in NUT (usually "ups")</Field.Description>
 					{#if $editErrors.ups_name}
-						<Field.Error>{$editErrors.ups_name}</Field.Error>
+						<Field.Error id="edit-ups-name-error">{$editErrors.ups_name}</Field.Error>
 					{/if}
 				</Field.Field>
 				<Dialog.Footer>
@@ -255,7 +321,19 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
-	{#if loading}
+	{#if loadError}
+		<Card.Root>
+			<Card.Content class="p-12 text-center">
+				<Zap class="h-12 w-12 mx-auto mb-4 opacity-50 text-destructive" />
+				<p class="mb-2 font-medium">Couldn't load UPS list</p>
+				<p class="text-sm text-muted-foreground mb-4">{loadError}</p>
+				<Button variant="outline" onclick={() => invalidateUPS()}>
+					<RefreshCw class="h-4 w-4" />
+					Retry
+				</Button>
+			</Card.Content>
+		</Card.Root>
+	{:else if loading}
 		<div class="rounded-md border">
 			<Table.Root>
 				<Table.Header>
@@ -298,7 +376,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each upsList as ups}
+					{#each upsList as ups (ups.id)}
 						<Table.Row>
 							<Table.Cell class="font-medium">{ups.name}</Table.Cell>
 							<Table.Cell class="font-mono text-muted-foreground">{ups.host}</Table.Cell>
@@ -307,7 +385,12 @@
 								<div class="flex justify-end gap-1">
 									<Tooltip.Root>
 										<Tooltip.Trigger>
-											<Button size="icon" variant="outline" onclick={() => openEditDialog(ups)}>
+											<Button
+												size="icon"
+												variant="outline"
+												onclick={() => openEditDialog(ups)}
+												aria-label="Edit {ups.name}"
+											>
 												<Pencil class="h-4 w-4" />
 											</Button>
 										</Tooltip.Trigger>
@@ -320,8 +403,9 @@
 											<Button
 												size="icon"
 												variant="destructive"
-												onclick={() => deleteUPS(ups)}
+												onclick={() => requestDelete(ups)}
 												disabled={deletingId === ups.id}
+												aria-label="Delete {ups.name}"
 											>
 												{#if deletingId === ups.id}
 													<RefreshCw class="h-4 w-4 animate-spin" />

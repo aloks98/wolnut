@@ -1,5 +1,7 @@
-# Frontend build stage - use slim (Debian) for better native module compatibility
-FROM node:22-slim AS frontend
+# Frontend build stage - use slim (Debian) for better native module compatibility.
+# Pin to a specific patch tag; the frontend gets compiled into the binary, so a
+# silently-rolled Node minor would change shipped artifacts without any code change.
+FROM node:22.12.0-slim AS frontend
 
 WORKDIR /app/web
 
@@ -15,7 +17,7 @@ COPY web/ .
 RUN pnpm build
 
 # Backend build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.22-alpine3.19 AS builder
 
 WORKDIR /app
 
@@ -54,6 +56,6 @@ ENV WOLNUT_DATA_PATH=/data
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
 
 ENTRYPOINT ["/app/wol-nut"]

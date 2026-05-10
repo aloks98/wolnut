@@ -1,12 +1,42 @@
+/* IBM Plex Sans + Mono — bundled at build time so a self-hosted wol-nut never
+   reaches out to a font CDN at runtime.  Latin subset only; the full subset
+   set (cyrillic / greek / vietnamese / etc.) would add ~900KB to the embedded
+   Go binary for languages this UI doesn't render. */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+
 @import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+ * Semantic color palette — reference, not redefinition
+ *
+ * Status colors carry meaning, not decoration.  Apply ruthlessly:
+ *
+ *   healthy   → emerald-500   #10b981   online, charging, on grid power
+ *   warning   → amber-500     #f59e0b   on battery, elevated load (50–80%)
+ *   critical  → red-500       #ef4444   offline, low battery, overload
+ *   unknown   → muted         token     no data / no IP configured
+ *
+ * Standard recipe for badges: bg-{color}-500/15 text-{color}-500 border-{color}-500/20
+ *
+ * NEVER use green-500 (#22c55e) — it's visually distinct from emerald-500 and
+ * would split the "healthy" signal into two near-identical greens.  Always
+ * emerald.  Likewise never use blue for status — blue isn't in this palette.
+ * Cyan (the brand color, var(--brand)) is reserved for primary actions and
+ * the wordmark only — never for status.
+ * --------------------------------------------------------------------------- */
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-	--font-sans: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-		'Segoe UI Symbol', 'Noto Color Emoji';
-	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-		'Courier New', monospace;
+	--font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+		'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+	--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+		'Liberation Mono', 'Courier New', monospace;
 
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
@@ -40,6 +70,10 @@
 	--color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
 	--color-sidebar-border: hsl(var(--sidebar-border));
 	--color-sidebar-ring: hsl(var(--sidebar-ring));
+
+	/* Brand: electric cyan. Primary actions, focus rings, the wordmark only.
+	   Never used for status — emerald/amber/red own that. */
+	--color-brand: hsl(var(--brand));
 }
 
 :root {
@@ -50,7 +84,10 @@
 	--card-foreground: 240 10% 3.9%;
 	--popover: 0 0% 100%;
 	--popover-foreground: 240 10% 3.9%;
-	--primary: 240 5.9% 10%;
+	/* Cyan deeper in light mode (≈ cyan-700) so white text on a primary
+	   button passes WCAG AA. */
+	--brand: 192 91% 36%;
+	--primary: 192 91% 36%;
 	--primary-foreground: 0 0% 98%;
 	--secondary: 240 4.8% 95.9%;
 	--secondary-foreground: 240 5.9% 10%;
@@ -62,15 +99,15 @@
 	--destructive-foreground: 0 0% 98%;
 	--border: 240 5.9% 90%;
 	--input: 240 5.9% 90%;
-	--ring: 240 5.9% 10%;
+	--ring: 192 91% 36%;
 	--sidebar: 0 0% 98%;
 	--sidebar-foreground: 240 5.3% 26.1%;
-	--sidebar-primary: 240 5.9% 10%;
+	--sidebar-primary: 192 91% 36%;
 	--sidebar-primary-foreground: 0 0% 98%;
 	--sidebar-accent: 240 4.8% 95.9%;
 	--sidebar-accent-foreground: 240 5.9% 10%;
 	--sidebar-border: 220 13% 91%;
-	--sidebar-ring: 240 5.9% 10%;
+	--sidebar-ring: 192 91% 36%;
 }
 
 .dark {
@@ -80,8 +117,11 @@
 	--card-foreground: 0 0% 98%;
 	--popover: 240 10% 3.9%;
 	--popover-foreground: 0 0% 98%;
-	--primary: 0 0% 98%;
-	--primary-foreground: 240 5.9% 10%;
+	/* Cyan vibrant in dark mode (≈ cyan-400) so it pops on zinc-950.
+	   Pair with deep zinc text for AA contrast on primary buttons. */
+	--brand: 189 94% 56%;
+	--primary: 189 94% 56%;
+	--primary-foreground: 240 10% 5%;
 	--secondary: 240 3.7% 15.9%;
 	--secondary-foreground: 0 0% 98%;
 	--muted: 240 3.7% 15.9%;
@@ -92,15 +132,15 @@
 	--destructive-foreground: 0 0% 98%;
 	--border: 240 3.7% 15.9%;
 	--input: 240 3.7% 15.9%;
-	--ring: 240 4.9% 83.9%;
+	--ring: 189 94% 56%;
 	--sidebar: 240 5.9% 10%;
 	--sidebar-foreground: 240 4.8% 95.9%;
-	--sidebar-primary: 224.3 76.3% 48%;
-	--sidebar-primary-foreground: 0 0% 100%;
+	--sidebar-primary: 189 94% 56%;
+	--sidebar-primary-foreground: 240 10% 5%;
 	--sidebar-accent: 240 3.7% 15.9%;
 	--sidebar-accent-foreground: 240 4.8% 95.9%;
 	--sidebar-border: 240 3.7% 15.9%;
-	--sidebar-ring: 240 4.9% 83.9%;
+	--sidebar-ring: 189 94% 56%;
 }
 
 @layer base {
@@ -109,5 +149,15 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+		font-feature-settings: 'kern', 'ss03'; /* Plex 'ss03' = simpler 'a' */
+	}
+	/* Tighten heading letter-spacing slightly — IBM Plex Sans defaults
+	   slightly open, which makes large type read as airy.  Tailwind's
+	   tracking-tight (-0.025em) handles the per-element case; this baseline
+	   guards anything that forgets to apply the utility. */
+	h1,
+	h2,
+	h3 {
+		letter-spacing: -0.015em;
 	}
 }

@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { configAPI, versionAPI } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
+	import { createQuery } from '@tanstack/svelte-query';
 	import Download from '@lucide/svelte/icons/download';
 	import Upload from '@lucide/svelte/icons/upload';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -13,17 +14,34 @@
 
 	let importing = $state(false);
 	let fileInput: HTMLInputElement;
+	let reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
-	let currentVersion = $state<string | null>(null);
-	let latestVersion = $state<string | null>(null);
-	let latestUrl = $state<string | null>(null);
-	let checkingUpdate = $state(true);
+	const currentQuery = createQuery(() => ({
+		queryKey: ['version', 'current'],
+		queryFn: async () => {
+			const res = await versionAPI.getCurrent();
+			if (res.success && res.data) return res.data;
+			throw new Error(res.error || 'Failed to fetch current version');
+		},
+		staleTime: Infinity
+	}));
+
+	const latestQuery = createQuery(() => ({
+		queryKey: ['version', 'latest'],
+		queryFn: async () => versionAPI.getLatest(),
+		// Cache for 1h — GitHub's unauth API limit is 60/hr/IP.
+		staleTime: 1000 * 60 * 60,
+		retry: 1
+	}));
+
+	const currentVersion = $derived(currentQuery.data?.version ?? null);
+	const latestVersion = $derived(latestQuery.data?.version ?? null);
+	const latestUrl = $derived(latestQuery.data?.url ?? null);
 
 	const updateAvailable = $derived(
-		currentVersion &&
-			latestVersion &&
+		currentVersion !== null &&
+			latestVersion !== null &&
 			currentVersion !== 'dev' &&
-			latestVersion !== currentVersion &&
 			compareVersions(latestVersion, currentVersion) > 0
 	);
 
@@ -38,26 +56,6 @@
 			if (numA < numB) return -1;
 		}
 		return 0;
-	}
-
-	async function checkForUpdates() {
-		checkingUpdate = true;
-
-		const [currentRes, latestRes] = await Promise.all([
-			versionAPI.getCurrent(),
-			versionAPI.getLatest()
-		]);
-
-		if (currentRes.success && currentRes.data) {
-			currentVersion = currentRes.data.version;
-		}
-
-		if (latestRes) {
-			latestVersion = latestRes.version;
-			latestUrl = latestRes.url;
-		}
-
-		checkingUpdate = false;
 	}
 
 	function exportConfig() {
@@ -77,45 +75,53 @@
 		}
 
 		importing = true;
-		const res = await configAPI.import(file);
-
-		if (res.success) {
-			toast.success('Configuration imported successfully');
-			setTimeout(() => window.location.reload(), 1000);
-		} else {
-			toast.error(res.error || 'Failed to import configuration');
+		try {
+			const res = await configAPI.import(file);
+			if (res.success) {
+				toast.success('Configuration imported successfully');
+				reloadTimer = setTimeout(() => window.location.reload(), 1000);
+			} else {
+				toast.error(res.error || 'Failed to import configuration');
+			}
+		} finally {
+			importing = false;
+			input.value = '';
 		}
-
-		importing = false;
-		input.value = '';
 	}
 
-	onMount(() => {
-		checkForUpdates();
+	onDestroy(() => {
+		if (reloadTimer !== null) {
+			clearTimeout(reloadTimer);
+		}
 	});
 </script>
 
+<svelte:head>
+	<title>Settings · WolNUT</title>
+</svelte:head>
+
 <div class="space-y-6">
 	<div>
-		<h1 class="text-2xl font-bold">Settings</h1>
+		<h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
 		<p class="text-muted-foreground">Backup and restore your configuration</p>
 	</div>
 
 	<!-- Update Banner -->
 	{#if updateAvailable}
-		<div class="rounded-lg border border-green-500/50 bg-green-500/10 p-4">
+		<div class="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-4">
 			<div class="flex items-center justify-between gap-4">
 				<div class="flex items-center gap-3">
-					<ArrowUpCircle class="h-5 w-5 text-green-500" />
+					<ArrowUpCircle class="h-5 w-5 text-emerald-500" />
 					<div>
-						<p class="font-medium text-green-500">Update available!</p>
+						<p class="font-medium text-emerald-500">Update available!</p>
 						<p class="text-sm text-muted-foreground">
-							Version {latestVersion} is available. You're on {currentVersion}.
+							Version <span class="font-mono tabular-nums">{latestVersion}</span> is available. You're
+							on <span class="font-mono tabular-nums">{currentVersion}</span>.
 						</p>
 					</div>
 				</div>
 				{#if latestUrl}
-					<Button href={latestUrl} target="_blank" rel="noopener noreferrer" size="sm" variant="outline" class="border-green-500/50 text-green-500 hover:bg-green-500/10">
+					<Button href={latestUrl} target="_blank" rel="noopener noreferrer" size="sm" variant="outline" class="border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10">
 						<ExternalLink class="h-4 w-4" />
 						View Release
 					</Button>
@@ -188,15 +194,15 @@
 	<Card.Root>
 		<Card.Header>
 			<Card.Title class="flex items-center justify-between">
-				<span>About WoL-NUT</span>
+				<span>About WolNUT</span>
 				{#if currentVersion}
-					<Badge variant="outline">{currentVersion}</Badge>
+					<Badge variant="outline" class="font-mono tabular-nums">{currentVersion}</Badge>
 				{/if}
 			</Card.Title>
 		</Card.Header>
 		<Card.Content class="text-sm text-muted-foreground space-y-3">
 			<p>
-				WoL-NUT is a lightweight, self-hosted dashboard for managing Wake-on-LAN devices and monitoring UPS systems via NUT (Network UPS Tools). It provides a simple, responsive interface to wake your network devices and keep an eye on your power backup status.
+				WolNUT is a lightweight, self-hosted dashboard for managing Wake-on-LAN devices and monitoring UPS systems via NUT (Network UPS Tools). It provides a simple, responsive interface to wake your network devices and keep an eye on your power backup status.
 			</p>
 			<p>
 				<a

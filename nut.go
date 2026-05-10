@@ -4,10 +4,48 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+// upsHostRegex matches "host" or "host:port".  Reject URL schemes, paths, whitespace —
+// the value is fed directly to net.DialTimeout, so a malformed value would let a
+// caller probe arbitrary internal services (SSRF).
+var upsHostRegex = regexp.MustCompile(`^([A-Za-z0-9._\-]+)(?::(\d{1,5}))?$`)
+
+// upsNameRegex limits UPS names to NUT-safe identifiers.  A newline or space
+// here would let a caller inject a second NUT protocol command into the same TCP session.
+var upsNameRegex = regexp.MustCompile(`^[A-Za-z0-9._\-]+$`)
+
+// ValidateUPSHost reports whether host is acceptable for net.DialTimeout.
+// Accepts "hostname" or "hostname:port"; port must be 1-65535 if provided.
+func ValidateUPSHost(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	m := upsHostRegex.FindStringSubmatch(host)
+	if m == nil {
+		return false
+	}
+	if m[2] != "" {
+		port, err := strconv.Atoi(m[2])
+		if err != nil || port < 1 || port > 65535 {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidateUPSName reports whether name is safe to interpolate into a NUT command.
+func ValidateUPSName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	return upsNameRegex.MatchString(name)
+}
 
 type UPSStatus struct {
 	ID   string `json:"id"`
@@ -83,8 +121,10 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	}
 	defer conn.Close()
 
-	// Set read deadline
-	conn.SetReadDeadline(time.Now().Add(readTimeout))
+	// Bound both reads and writes. SetDeadline covers Write too — without
+	// this, a half-open NUT daemon (TCP handshake completed, upsd hung)
+	// could block conn.Write forever.
+	conn.SetDeadline(time.Now().Add(readTimeout))
 
 	// Send LIST VAR command
 	cmd := fmt.Sprintf("LIST VAR %s\n", upsName)
@@ -97,6 +137,7 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	// Read response
 	vars := make(map[string]string)
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 1<<20) // up to 1 MiB per token
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -277,17 +318,93 @@ func QueryUPS(host, upsName string) (UPSStatus, error) {
 	return status, nil
 }
 
-// QueryAllUPS queries all configured UPS units
+// upsRefreshInterval is how often the cache re-queries every UPS.  At 15s the
+// dashboard feels live without hammering NUT or making /api/ups/status block
+// on a fan-out of TCP dials per request.
+const upsRefreshInterval = 15 * time.Second
+
+// UPSStatusCache caches UPS status with periodic background refresh, so HTTP
+// handlers don't dial NUT (potentially blocking up to connectTimeout+readTimeout
+// per UPS) on every request.
+type UPSStatusCache struct {
+	mu       sync.RWMutex
+	statuses []UPSStatus
+	state    *AppState
+	stopCh   chan struct{}
+}
+
+// NewUPSStatusCache starts a background goroutine that refreshes UPS status
+// every upsRefreshInterval.  Cancel via Stop().
+func NewUPSStatusCache(state *AppState) *UPSStatusCache {
+	c := &UPSStatusCache{
+		state:  state,
+		stopCh: make(chan struct{}),
+	}
+	go c.run()
+	return c
+}
+
+func (c *UPSStatusCache) run() {
+	c.refresh()
+	ticker := time.NewTicker(upsRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			c.refresh()
+		case <-c.stopCh:
+			return
+		}
+	}
+}
+
+func (c *UPSStatusCache) refresh() {
+	statuses := QueryAllUPS(c.state.GetUPSList())
+	c.mu.Lock()
+	c.statuses = statuses
+	c.mu.Unlock()
+}
+
+// Get returns a snapshot of the most recent UPS statuses.  Safe to call from
+// any goroutine; returns an empty slice until the first refresh completes.
+func (c *UPSStatusCache) Get() []UPSStatus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]UPSStatus, len(c.statuses))
+	copy(out, c.statuses)
+	return out
+}
+
+// Refresh forces an immediate refresh.  Useful after a UPS list mutation so the
+// dashboard reflects the new entry without waiting for the next tick.
+func (c *UPSStatusCache) Refresh() {
+	c.refresh()
+}
+
+// Stop terminates the background refresh goroutine.
+func (c *UPSStatusCache) Stop() {
+	close(c.stopCh)
+}
+
+// QueryAllUPS queries all configured UPS units in parallel.
+// Total wall time is bounded by the slowest single UPS (connectTimeout+readTimeout)
+// instead of the sum across all UPSes.
 func QueryAllUPS(upsList []UPSEntry) []UPSStatus {
 	statuses := make([]UPSStatus, len(upsList))
+	var wg sync.WaitGroup
 
 	for i, ups := range upsList {
-		status, _ := QueryUPS(ups.Host, ups.UPSName)
-		status.ID = ups.ID
-		status.Name = ups.Name
-		statuses[i] = status
+		wg.Add(1)
+		go func(idx int, u UPSEntry) {
+			defer wg.Done()
+			status, _ := QueryUPS(u.Host, u.UPSName)
+			status.ID = u.ID
+			status.Name = u.Name
+			statuses[idx] = status
+		}(i, ups)
 	}
 
+	wg.Wait()
 	return statuses
 }
 
