@@ -99,6 +99,10 @@
 		tone: Tone;
 		sub: string;
 		icon: typeof Plug;
+		// When present, renders a thin inline load bar after the sub-line.
+		// Only set on healthy states — on battery / critical, the focal info
+		// is runtime not load, and a bar would be visual noise.
+		load?: number;
 	};
 
 	function headline(ups: UPSStatus): Headline {
@@ -137,15 +141,24 @@
 				text: 'On grid · charging',
 				tone: 'healthy',
 				sub: `${ups.battery_charge}% charge · ${ups.load}% load`,
-				icon: BatteryCharging
+				icon: BatteryCharging,
+				load: ups.load
 			};
 		}
 		return {
 			text: 'On grid power',
 			tone: 'healthy',
 			sub: `${ups.battery_charge}% charge · ${ups.load}% load`,
-			icon: Plug
+			icon: Plug,
+			load: ups.load
 		};
+	}
+
+	// Threshold colors match the semantic palette in app.css.
+	function loadBarColor(load: number): string {
+		if (load < 50) return 'bg-emerald-500';
+		if (load < 80) return 'bg-amber-500';
+		return 'bg-red-500';
 	}
 
 	function toneText(tone: Tone): string {
@@ -284,9 +297,20 @@
 										{h.text}
 									</p>
 									{#if h.sub}
-										<p class="mt-1 text-sm text-muted-foreground tabular-nums">
-											{h.sub}
-										</p>
+										<div class="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground tabular-nums">
+											<span>{h.sub}</span>
+											{#if h.load !== undefined}
+												<span
+													class="inline-block h-1.5 w-14 overflow-hidden rounded-full bg-muted"
+													aria-hidden="true"
+												>
+													<span
+														class="block h-full rounded-full {loadBarColor(h.load)}"
+														style="width: {Math.max(0, Math.min(100, h.load))}%"
+													></span>
+												</span>
+											{/if}
+										</div>
 									{/if}
 								</div>
 							</div>

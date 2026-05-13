@@ -6,7 +6,6 @@
 	import Moon from '@lucide/svelte/icons/moon';
 	import Menu from '@lucide/svelte/icons/menu';
 	import X from '@lucide/svelte/icons/x';
-	import BrandMark from '$lib/components/BrandMark.svelte';
 
 	let mobileMenuOpen = $state(false);
 
@@ -26,11 +25,9 @@
 <nav class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 	<div class="mx-auto max-w-6xl px-4">
 		<div class="flex h-14 items-center justify-between">
-			<!-- Wordmark — the BrandMark pulse carries the brand visually; the
-			     wordmark stays plain so it reads cleanly at any size. -->
-			<a href="/" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
-				<BrandMark class="h-5 w-5 text-brand" />
-				<span>WolNUT</span>
+			<!-- Wordmark only. -->
+			<a href="/" class="text-lg font-semibold tracking-tight">
+				WolNUT
 			</a>
 
 			<!-- Desktop Navigation -->
