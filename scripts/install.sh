@@ -138,7 +138,9 @@ ProtectHome=true
 ReadWritePaths=$DATA_DIR
 PrivateTmp=true
 
-# Network capabilities for WoL broadcast
+# CAP_NET_RAW lets the device online-status check send ICMP echo (ping)
+# requests. Without it the check falls back to probing common TCP ports, so a
+# host that's up but exposes no listed port would show as offline.
 AmbientCapabilities=CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_RAW
 

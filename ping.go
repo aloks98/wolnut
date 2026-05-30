@@ -3,9 +3,17 @@ package main
 import (
 	"context"
 	"net"
+	"os"
+	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
 )
+
+// ianaProtocolICMP is the IP protocol number for ICMPv4 (used by icmp.ParseMessage).
+const ianaProtocolICMP = 1
 
 // DeviceStatus represents a device with its online status
 type DeviceStatus struct {
@@ -109,25 +117,49 @@ func (sc *StatusCache) Stop() {
 	close(sc.stopCh)
 }
 
-// CheckDeviceOnline checks if a device is reachable via TCP ping
-// All ports are checked in parallel for faster response
+// CheckDeviceOnline reports whether a device is reachable.
+//
+// It prefers an ICMP echo, which detects a host that is up regardless of which
+// ports it exposes, and falls back to a TCP-connect probe when ICMP isn't
+// permitted (no CAP_NET_RAW and no unprivileged ping socket) or when the host
+// doesn't answer ICMP but may still be serving TCP (ICMP-filtered hosts).
+// ICMP is attempted for IPv4 only; IPv6 targets use the TCP probe.
 func CheckDeviceOnline(ip string) bool {
-	if ip == "" {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
 		return false
 	}
 
-	// Try common ports in parallel
+	if parsed.To4() != nil {
+		switch alive, usable := icmpPingv4(parsed); {
+		case usable && alive:
+			return true
+		case usable && !alive:
+			// ICMP worked but no reply — host may filter ICMP; try TCP.
+		default:
+			// ICMP unavailable (no privilege) — TCP is the only option.
+		}
+	}
+
+	return tcpProbe(parsed)
+}
+
+// tcpProbe returns true if a TCP connection to any common service port succeeds
+// within pingTimeout. Ports are dialed in parallel; the first success cancels
+// the rest.
+func tcpProbe(ip net.IP) bool {
 	ports := []string{"80", "443", "22", "3389", "445"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	resultCh := make(chan bool, len(ports))
+	host := ip.String()
 
 	for _, port := range ports {
 		go func(p string) {
 			dialer := net.Dialer{Timeout: pingTimeout}
-			conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, p))
+			conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, p))
 			if err == nil {
 				conn.Close()
 				resultCh <- true
@@ -148,3 +180,79 @@ func CheckDeviceOnline(ip string) bool {
 	return false
 }
 
+// icmpPingv4 sends one ICMP echo request to ip and waits for a reply.
+//
+//	alive  — an echo reply came back from ip within pingTimeout
+//	usable — an ICMP socket could be opened (i.e. ICMP is permitted here)
+//
+// When usable is false the caller should fall back to another probe.
+func icmpPingv4(ip net.IP) (alive, usable bool) {
+	// Prefer the unprivileged datagram socket (Linux net.ipv4.ping_group_range);
+	// fall back to a raw socket (needs CAP_NET_RAW). The two use different
+	// destination address types when sending.
+	conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
+	udp := true
+	if err != nil {
+		conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+		udp = false
+		if err != nil {
+			return false, false
+		}
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(pingTimeout)); err != nil {
+		return false, true
+	}
+
+	msg := icmp.Message{
+		Type: ipv4.ICMPTypeEcho,
+		Code: 0,
+		Body: &icmp.Echo{ID: os.Getpid() & 0xffff, Seq: 1, Data: []byte("wolnut-ping")},
+	}
+	wb, err := msg.Marshal(nil)
+	if err != nil {
+		return false, true
+	}
+
+	var dst net.Addr = &net.IPAddr{IP: ip}
+	if udp {
+		dst = &net.UDPAddr{IP: ip}
+	}
+	if _, err := conn.WriteTo(wb, dst); err != nil {
+		return false, true
+	}
+
+	// Match replies by source address rather than ICMP ID: the unprivileged
+	// udp4 socket has the kernel rewrite the ID, so an ID check would never
+	// match there. Keep reading until a reply from ip arrives or the deadline.
+	rb := make([]byte, 1500)
+	for {
+		n, peer, err := conn.ReadFrom(rb)
+		if err != nil {
+			return false, true // deadline reached or read error — no reply
+		}
+		if p := peerIP(peer); p == nil || !p.Equal(ip) {
+			continue // a reply meant for some other ping
+		}
+		rm, err := icmp.ParseMessage(ianaProtocolICMP, rb[:n])
+		if err != nil {
+			continue
+		}
+		if rm.Type == ipv4.ICMPTypeEchoReply {
+			return true, true
+		}
+	}
+}
+
+// peerIP extracts the IP from the address returned by icmp.PacketConn.ReadFrom,
+// which is a *net.UDPAddr for udp4 sockets and a *net.IPAddr for raw sockets.
+func peerIP(addr net.Addr) net.IP {
+	switch a := addr.(type) {
+	case *net.UDPAddr:
+		return a.IP
+	case *net.IPAddr:
+		return a.IP
+	}
+	return nil
+}

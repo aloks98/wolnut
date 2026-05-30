@@ -24,7 +24,7 @@ RUN pnpm build
 # Backend build stage. Go version tracks go.mod's directive; keep CI
 # (build.yml / release.yml) on the same minor so dev, CI, and release binaries
 # are built with one toolchain.
-FROM golang:1.24-alpine3.21 AS builder
+FROM golang:1.25-alpine3.21 AS builder
 
 WORKDIR /app
 

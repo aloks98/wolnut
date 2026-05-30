@@ -10,7 +10,7 @@ Lightweight Wake-on-LAN and NUT UPS monitoring dashboard for Raspberry Pi and Li
 - **Detailed UPS Stats** - View power draw, voltage, runtime, temperature, and more
 - **Mobile Friendly** - Responsive design works on any device
 - **Single Binary** - No dependencies, embedded frontend
-- **Auto-refresh** - UPS status updates every 30 seconds
+- **Auto-refresh** - UPS status updates every 15 seconds
 - **Backup/Restore** - Export and import configuration
 
 ## Screenshots
@@ -36,9 +36,14 @@ curl -fsSL https://raw.githubusercontent.com/aloks98/wolnut/master/scripts/insta
 docker run -d \
   --name wol-nut \
   --network host \
+  --cap-add NET_RAW \
   -v wol-nut-data:/data \
   ghcr.io/aloks98/wolnut:latest
 ```
+
+> `--cap-add NET_RAW` lets the device online-status check use ICMP ping. It's
+> optional — without it the check falls back to probing common TCP ports, so a
+> host that's up but exposes none of them would show as offline.
 
 ### Docker Compose
 
