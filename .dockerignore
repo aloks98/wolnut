@@ -1,0 +1,37 @@
+# Keep the Docker build context small and prevent host artifacts from leaking
+# into the image. In particular, web/node_modules (installed fresh inside the
+# image) must not overlay the in-image install — pnpm 10+ then verifies the
+# tree and aborts the build — and web/build (produced by the frontend stage)
+# must not be clobbered by a stale host copy during the backend `COPY . .`.
+
+# VCS / CI
+.git
+.github
+
+# Frontend deps & build artifacts (rebuilt inside the image)
+web/node_modules
+web/build
+web/.svelte-kit
+web/.pnpm-store
+
+# Go build outputs
+wol-nut
+wol-nut-*
+*.test
+coverage.out
+
+# Local data / dev
+data/
+dev-data/
+
+# Docs & agent config (not needed at build time)
+docs/
+.claude/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

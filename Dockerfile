@@ -13,8 +13,11 @@ WORKDIR /app/web
 # that doesn't match local dev.
 RUN corepack enable
 
-# Install dependencies
-COPY web/package.json web/pnpm-lock.yaml ./
+# Install dependencies. pnpm-workspace.yaml carries the approved-builds list
+# (allowBuilds: esbuild) — without it here, pnpm 10+ aborts the install with
+# ERR_PNPM_IGNORED_BUILDS for esbuild's native-binary build script. .npmrc
+# carries engine-strict. Both must be in the build context, not just locally.
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./
 RUN pnpm install --frozen-lockfile
 
 # Build frontend
