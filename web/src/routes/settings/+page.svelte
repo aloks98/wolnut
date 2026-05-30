@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { configAPI, versionAPI } from '$lib/api';
+	import { compareVersions } from '$lib/utils';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -44,32 +45,6 @@
 			currentVersion !== 'dev' &&
 			compareVersions(latestVersion, currentVersion) > 0
 	);
-
-	function compareVersions(a: string, b: string): number {
-		// Parse the leading integer of each dotted segment. parseInt('3-beta')
-		// → 3, so a pre-release tag compares as its release base rather than
-		// poisoning the comparison with NaN (NaN > x and NaN < x are both
-		// false, which previously made any suffixed tag report "no update").
-		const parse = (v: string) =>
-			v
-				.replace(/^v/, '')
-				.split('.')
-				.map((part) => {
-					const n = parseInt(part, 10);
-					return Number.isNaN(n) ? 0 : n;
-				});
-
-		const partsA = parse(a);
-		const partsB = parse(b);
-
-		for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-			const numA = partsA[i] || 0;
-			const numB = partsB[i] || 0;
-			if (numA > numB) return 1;
-			if (numA < numB) return -1;
-		}
-		return 0;
-	}
 
 	function exportConfig() {
 		window.location.href = configAPI.exportUrl;

@@ -37,6 +37,33 @@ export function formatTime(date: Date): string {
 	return date.toLocaleTimeString();
 }
 
+// Compare two dotted version strings. Returns 1 if a > b, -1 if a < b, 0 if
+// equal. Parses the leading integer of each segment, so parseInt('3-beta') → 3
+// and a pre-release tag compares as its release base rather than poisoning the
+// comparison with NaN (NaN > x and NaN < x are both false, which would make any
+// suffixed tag falsely report "no update").
+export function compareVersions(a: string, b: string): number {
+	const parse = (v: string) =>
+		v
+			.replace(/^v/, '')
+			.split('.')
+			.map((part) => {
+				const n = parseInt(part, 10);
+				return Number.isNaN(n) ? 0 : n;
+			});
+
+	const partsA = parse(a);
+	const partsB = parse(b);
+
+	for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+		const numA = partsA[i] || 0;
+		const numB = partsB[i] || 0;
+		if (numA > numB) return 1;
+		if (numA < numB) return -1;
+	}
+	return 0;
+}
+
 // Number formatting
 export function formatWattage(watts: number): string {
 	if (watts >= 1000) {

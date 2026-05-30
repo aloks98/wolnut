@@ -32,6 +32,10 @@ jobs:
         working-directory: web
         run: pnpm build
 
+      - name: Test frontend
+        working-directory: web
+        run: pnpm test
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
