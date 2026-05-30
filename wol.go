@@ -113,13 +113,44 @@ func SendWakeOnLAN(mac, targetIP string) error {
 	return nil
 }
 
-// isLikelyBroadcast returns true for an IPv4 address whose host portion
-// looks like all-ones in a /24 (e.g., 192.168.1.255).  We don't know the
-// real netmask, so this is a heuristic for the common /24 case.
+// isLikelyBroadcast reports whether ip should be sent with SO_BROADCAST set.
+// It first checks ip against the directed-broadcast address of every local
+// IPv4 network (using the real netmask), so a /16 or /23 broadcast is detected
+// correctly — not just /24.  If ip isn't the broadcast of any directly-attached
+// network (e.g. a directed broadcast aimed at a remote subnet we can't
+// introspect), it falls back to the common-case heuristic: all-ones host octet
+// in a /24 (x.x.x.255).
 func isLikelyBroadcast(ip net.IP) bool {
 	v4 := ip.To4()
 	if v4 == nil {
 		return false
 	}
+
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if b := broadcastAddr(ipnet); b != nil && b.Equal(ip) {
+				return true
+			}
+		}
+	}
+
 	return v4[3] == 255
+}
+
+// broadcastAddr returns the directed-broadcast address of an IPv4 network
+// (host bits all ones), or nil for non-IPv4 networks.
+func broadcastAddr(n *net.IPNet) net.IP {
+	ip := n.IP.To4()
+	if ip == nil || len(n.Mask) != net.IPv4len {
+		return nil
+	}
+	b := make(net.IP, net.IPv4len)
+	for i := 0; i < net.IPv4len; i++ {
+		b[i] = ip[i] | ^n.Mask[i]
+	}
+	return b
 }

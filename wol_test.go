@@ -82,6 +82,33 @@ func TestBuildMagicPacket(t *testing.T) {
 	}
 }
 
+func TestBroadcastAddr(t *testing.T) {
+	cases := []struct {
+		cidr string
+		want string
+	}{
+		{"192.168.1.10/24", "192.168.1.255"},
+		{"10.0.0.5/8", "10.255.255.255"},
+		{"172.16.4.1/23", "172.16.5.255"},
+		{"192.168.1.64/26", "192.168.1.127"},
+	}
+	for _, c := range cases {
+		_, ipnet, err := net.ParseCIDR(c.cidr)
+		if err != nil {
+			t.Fatalf("ParseCIDR(%q): %v", c.cidr, err)
+		}
+		if got := broadcastAddr(ipnet); got == nil || got.String() != c.want {
+			t.Errorf("broadcastAddr(%q) = %v, want %s", c.cidr, got, c.want)
+		}
+	}
+
+	// IPv6 networks have no IPv4 directed broadcast.
+	_, v6, _ := net.ParseCIDR("2001:db8::/64")
+	if got := broadcastAddr(v6); got != nil {
+		t.Errorf("broadcastAddr(ipv6) = %v, want nil", got)
+	}
+}
+
 func TestIsLikelyBroadcast(t *testing.T) {
 	cases := map[string]bool{
 		"192.168.1.255": true,
