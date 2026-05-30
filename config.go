@@ -78,13 +78,18 @@ func LoadConfig(path string) (Config, error) {
 		Log:    LogConfig{Level: "info"},
 	}
 
-	// Load from file if exists
+	// Load from file if exists. An explicitly-passed path that can't be read
+	// (typo, bad permissions) is fatal — silently falling back to defaults
+	// would run against the wrong data directory without any signal. A missing
+	// file is tolerated so first-run with a not-yet-created config works.
 	if path != "" {
 		data, err := os.ReadFile(path)
-		if err == nil {
-			if err := yaml.Unmarshal(data, &cfg); err != nil {
-				return cfg, fmt.Errorf("parse %s: %w", path, err)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return cfg, fmt.Errorf("read %s: %w", path, err)
 			}
+		} else if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return cfg, fmt.Errorf("parse %s: %w", path, err)
 		}
 	}
 

@@ -14,8 +14,17 @@ export function formatRuntime(seconds: number): string {
 	const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
 	const parts: string[] = [];
 
-	if (duration.hours && duration.hours > 0) {
-		parts.push(`${duration.hours}h`);
+	// Roll days/months/years up into hours — a UPS runtime is always shown in
+	// h/m, and intervalToDuration buckets anything ≥24h into `days` (and beyond),
+	// which would otherwise be silently dropped (25h → "1h").
+	const totalHours =
+		(duration.years ?? 0) * 365 * 24 +
+		(duration.months ?? 0) * 30 * 24 +
+		(duration.days ?? 0) * 24 +
+		(duration.hours ?? 0);
+
+	if (totalHours > 0) {
+		parts.push(`${totalHours}h`);
 	}
 	if (duration.minutes && duration.minutes > 0) {
 		parts.push(`${duration.minutes}m`);
