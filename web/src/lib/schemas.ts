@@ -3,9 +3,12 @@ import { z } from 'zod';
 // MAC address regex: accepts AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
 const macAddressRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
 
-// IP address regex: basic IPv4 validation
-const ipAddressRegex =
-	/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+// Accept IPv4 or IPv6 — the backend validates with net.ParseIP (both families)
+// and the online-status probe handles either via net.JoinHostPort, so the form
+// must not reject a valid IPv6 address.
+function isValidIP(val: string): boolean {
+	return z.ipv4().safeParse(val).success || z.ipv6().safeParse(val).success;
+}
 
 // Device schema
 export const deviceSchema = z.object({
@@ -19,7 +22,7 @@ export const deviceSchema = z.object({
 		),
 	ip: z
 		.string()
-		.refine((val) => val === '' || ipAddressRegex.test(val), {
+		.refine((val) => val === '' || isValidIP(val), {
 			message: 'Invalid IP address format'
 		})
 		.default('')

@@ -408,23 +408,6 @@ func QueryAllUPS(upsList []UPSEntry) []UPSStatus {
 	return statuses
 }
 
-// FormatRuntime formats runtime seconds into human-readable format
-func FormatRuntime(seconds int) string {
-	if seconds < 60 {
-		return fmt.Sprintf("%ds", seconds)
-	}
-	minutes := seconds / 60
-	if minutes < 60 {
-		return fmt.Sprintf("%dm", minutes)
-	}
-	hours := minutes / 60
-	mins := minutes % 60
-	if mins == 0 {
-		return fmt.Sprintf("%dh", hours)
-	}
-	return fmt.Sprintf("%dh %dm", hours, mins)
-}
-
 // GetStatusLabel returns a human-readable status label
 func GetStatusLabel(status string) string {
 	var parts []string

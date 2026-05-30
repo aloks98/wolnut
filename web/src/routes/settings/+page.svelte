@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { configAPI, versionAPI } from '$lib/api';
+	import { compareVersions } from '$lib/utils';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -44,19 +45,6 @@
 			currentVersion !== 'dev' &&
 			compareVersions(latestVersion, currentVersion) > 0
 	);
-
-	function compareVersions(a: string, b: string): number {
-		const partsA = a.replace(/^v/, '').split('.').map(Number);
-		const partsB = b.replace(/^v/, '').split('.').map(Number);
-
-		for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-			const numA = partsA[i] || 0;
-			const numB = partsB[i] || 0;
-			if (numA > numB) return 1;
-			if (numA < numB) return -1;
-		}
-		return 0;
-	}
 
 	function exportConfig() {
 		window.location.href = configAPI.exportUrl;

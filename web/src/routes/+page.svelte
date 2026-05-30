@@ -51,7 +51,9 @@
 			}
 			throw new Error(res.error || 'Failed to fetch UPS status');
 		},
-		refetchInterval: 30000,
+		// Match the backend's 15s UPS cache refresh — polling slower than the
+		// cache updates lets the dashboard lag real state by up to ~45s.
+		refetchInterval: 15000,
 		refetchIntervalInBackground: false
 	}));
 
@@ -369,10 +371,16 @@
 							{/if}
 						</div>
 
-						<!-- Raw NUT status code — fits "things you'd grep", so mono. -->
+						<!-- Status footer: humanized label first, then the raw NUT
+						     code in mono ("things you'd grep").  Skip the label when
+						     it's identical to the raw code (no tokens matched) so it
+						     isn't shown twice. -->
 						{#if !ups.error && ups.status}
-							<p class="border-t px-5 py-2 font-mono text-xs text-muted-foreground">
-								{ups.status}
+							<p class="flex flex-wrap items-center gap-x-2 border-t px-5 py-2 text-xs text-muted-foreground">
+								{#if ups.status_label && ups.status_label !== ups.status}
+									<span>{ups.status_label}</span>
+								{/if}
+								<span class="font-mono">{ups.status}</span>
 							</p>
 						{/if}
 					</Card.Root>

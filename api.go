@@ -54,38 +54,88 @@ func RegisterAPIHandlers(mux *http.ServeMux, state *AppState, statusCache *Statu
 // latestReleaseCache memoizes the GitHub /releases/latest response so that
 // browser-side polls don't burn the unauthenticated GitHub rate limit
 // (60/h/IP) — multiple tabs or NAT'd users would otherwise silently exhaust it.
+//
+// On a failed fetch it backs off for errTTL before contacting GitHub again and
+// keeps serving the last good value (stale) in the meantime. Without this, a
+// GitHub outage or a 403 rate-limit response would turn every poll into yet
+// another GitHub call — amplifying the very rate-limiting the cache prevents.
 type latestReleaseCache struct {
 	mu        sync.RWMutex
 	version   string
 	url       string
-	fetchedAt time.Time
-	ttl       time.Duration
+	ok        bool          // a successful fetch has happened at least once
+	fetchedAt time.Time     // time of last successful fetch
+	lastErrAt time.Time     // time of last failed fetch
+	ttl       time.Duration // freshness window for a successful value
+	errTTL    time.Duration // backoff window after a failed fetch
 }
 
 func newLatestReleaseCache(ttl time.Duration) *latestReleaseCache {
-	return &latestReleaseCache{ttl: ttl}
+	return &latestReleaseCache{ttl: ttl, errTTL: 5 * time.Minute}
 }
 
-func (c *latestReleaseCache) get() (string, string, bool) {
+type releaseSnapshot struct {
+	version string
+	url     string
+	fresh   bool // a successful value within ttl — serve it directly
+	stale   bool // an older value exists, worth serving while GitHub is down
+	backoff bool // a fetch failed recently — don't contact GitHub yet
+}
+
+func (c *latestReleaseCache) snapshot() releaseSnapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.fetchedAt.IsZero() || time.Since(c.fetchedAt) > c.ttl {
-		return "", "", false
+	s := releaseSnapshot{version: c.version, url: c.url}
+	if c.ok {
+		s.stale = true
+		s.fresh = time.Since(c.fetchedAt) <= c.ttl
 	}
-	return c.version, c.url, true
+	if !c.lastErrAt.IsZero() && time.Since(c.lastErrAt) < c.errTTL {
+		s.backoff = true
+	}
+	return s
 }
 
-func (c *latestReleaseCache) set(version, url string) {
+func (c *latestReleaseCache) setSuccess(version, url string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.version, c.url, c.fetchedAt = version, url, time.Now()
+	c.version, c.url, c.ok, c.fetchedAt = version, url, true, time.Now()
+	c.lastErrAt = time.Time{} // a fresh success clears the backoff window
+}
+
+func (c *latestReleaseCache) setError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastErrAt = time.Now()
 }
 
 func handleAPILatestRelease(cache *latestReleaseCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if v, u, ok := cache.get(); ok {
-			writeSuccess(w, map[string]string{"version": v, "url": u})
+		snap := cache.snapshot()
+		if snap.fresh {
+			writeSuccess(w, map[string]string{"version": snap.version, "url": snap.url})
 			return
+		}
+		// A recent fetch failed: serve the stale value if we have one, otherwise
+		// fail fast — either way, don't contact GitHub again until errTTL passes.
+		if snap.backoff {
+			if snap.stale {
+				writeSuccess(w, map[string]string{"version": snap.version, "url": snap.url})
+				return
+			}
+			writeError(w, http.StatusServiceUnavailable, "Latest release temporarily unavailable")
+			return
+		}
+
+		// serveFailure records the failure (starting the backoff window) and
+		// serves the stale value if available, else the given error.
+		serveFailure := func(status int, msg string) {
+			cache.setError()
+			if snap.stale {
+				writeSuccess(w, map[string]string{"version": snap.version, "url": snap.url})
+				return
+			}
+			writeError(w, status, msg)
 		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -94,6 +144,8 @@ func handleAPILatestRelease(cache *latestReleaseCache) http.HandlerFunc {
 		const url = "https://api.github.com/repos/aloks98/wolnut/releases/latest"
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
+			// Building the request never touches GitHub, so this isn't a reason
+			// to start the backoff window.
 			writeError(w, http.StatusInternalServerError, "Failed to build request")
 			return
 		}
@@ -102,12 +154,12 @@ func handleAPILatestRelease(cache *latestReleaseCache) http.HandlerFunc {
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "Failed to reach GitHub: "+err.Error())
+			serveFailure(http.StatusBadGateway, "Failed to reach GitHub: "+err.Error())
 			return
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			writeError(w, http.StatusBadGateway, fmt.Sprintf("GitHub responded with %d", resp.StatusCode))
+			serveFailure(http.StatusBadGateway, fmt.Sprintf("GitHub responded with %d", resp.StatusCode))
 			return
 		}
 
@@ -117,7 +169,7 @@ func handleAPILatestRelease(cache *latestReleaseCache) http.HandlerFunc {
 			Name    string `json:"name"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-			writeError(w, http.StatusBadGateway, "Failed to parse GitHub response")
+			serveFailure(http.StatusBadGateway, "Failed to parse GitHub response")
 			return
 		}
 
@@ -125,7 +177,7 @@ func handleAPILatestRelease(cache *latestReleaseCache) http.HandlerFunc {
 		if ver == "" {
 			ver = rel.Name
 		}
-		cache.set(ver, rel.HTMLURL)
+		cache.setSuccess(ver, rel.HTMLURL)
 		writeSuccess(w, map[string]string{"version": ver, "url": rel.HTMLURL})
 	}
 }

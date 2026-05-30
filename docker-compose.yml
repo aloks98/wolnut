@@ -4,6 +4,8 @@ services:
     container_name: wol-nut
     restart: unless-stopped
     network_mode: host  # Required for WoL broadcast and NUT access
+    cap_add:
+      - NET_RAW  # ICMP ping for device status (falls back to TCP probe without it)
     volumes:
       - ./data:/data
       - ./config.yml:/app/config.yml:ro  # Optional
