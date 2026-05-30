@@ -51,7 +51,9 @@
 			}
 			throw new Error(res.error || 'Failed to fetch UPS status');
 		},
-		refetchInterval: 30000,
+		// Match the backend's 15s UPS cache refresh — polling slower than the
+		// cache updates lets the dashboard lag real state by up to ~45s.
+		refetchInterval: 15000,
 		refetchIntervalInBackground: false
 	}));
 
