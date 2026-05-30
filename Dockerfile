@@ -21,8 +21,10 @@ RUN pnpm install --frozen-lockfile
 COPY web/ .
 RUN pnpm build
 
-# Backend build stage
-FROM golang:1.22-alpine3.19 AS builder
+# Backend build stage. Go version tracks go.mod's directive; keep CI
+# (build.yml / release.yml) on the same minor so dev, CI, and release binaries
+# are built with one toolchain.
+FROM golang:1.24-alpine3.21 AS builder
 
 WORKDIR /app
 
@@ -42,7 +44,7 @@ ARG COMMIT=none
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -o wol-nut
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
 

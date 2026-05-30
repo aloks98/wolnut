@@ -15,12 +15,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
+      # No explicit version: action-setup reads the pinned pnpm from the
+      # packageManager field in web/package.json, matching the Docker build.
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          package_json_file: web/package.json
 
       - name: Install frontend dependencies
         working-directory: web
@@ -33,7 +35,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
 
       - name: Build
         run: go build -v ./...
